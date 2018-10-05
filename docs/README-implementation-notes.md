@@ -8,6 +8,14 @@ March 2012
 of RRB-Trees written in Scala in 2012 by Tiark Rompf, co-author with
 Phil Bagwell of the paper on RRB-Trees.
 
+This might be [Scala's production
+implementation](https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/immutable/Vector.scala)
+
+[Paguro library](https://github.com/GlenKPeterson/Paguro) which
+includes a Java implementation of RRB-Trees, as well as some other
+data structures either inspired by, or copied from, Clojure's
+persistent data structures.
+
 Some [questions and
 discussion](https://stackoverflow.com/questions/14007153/what-invariant-do-rrb-trees-maintain)
 about invariants maintained by RRB-trees from StackOverflow.
