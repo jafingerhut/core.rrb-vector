@@ -1,7 +1,8 @@
 (ns clojure.core.rrb-vector.debug
   (:require clojure.core.rrb-vector.rrbt
             [clojure.core.rrb-vector.nodes
-             :refer [ranges object-nm primitive-nm]]
+             :refer [ranges object-nm primitive-nm
+                     branch-factor log-branch-factor]]
             [clojure.core.rrb-vector :as fv])
   (:import (clojure.lang PersistentVector)
            (clojure.core Vec)
@@ -44,7 +45,7 @@
                 (println)
                 (if-not (zero? shift)
                   (dorun
-                   (map-indexed (partial go (inc indent) (- shift 5))
+                   (map-indexed (partial go (inc indent) (- shift log-branch-factor))
                                 (let [arr (.array nm node)]
                                   (if (.regular nm node)
                                     arr
@@ -151,8 +152,8 @@
                     (.put m n n)
                     (if-not (zero? shift)
                       (let [arr (.array nm n)
-                            ns  (take 32 arr)]
+                            ns  (take branch-factor arr)]
                         (doseq [n ns]
-                          (go n (- shift 5)))))))]
+                          (go n (- shift log-branch-factor)))))))]
           (go (extract-root v) (extract-shift v)))))
     (.size m)))

@@ -8,7 +8,11 @@
                      first-child last-child remove-leftmost-child
                      replace-leftmost-child replace-rightmost-child
                      fold-tail new-path index-of-nil
-                     object-am object-nm primitive-nm]]
+                     object-am object-nm primitive-nm
+                     branch-factor branch-factor-plus-one
+                     branch-factor-minus-one branch-factor-squared
+                     log-branch-factor branch-factor-bitmask
+                     ]]
             [clojure.core.rrb-vector.transients :refer [transient-helper]]
             [clojure.core.rrb-vector.fork-join :as fj]
             [clojure.core.protocols :refer [IKVReduce]]
@@ -22,8 +26,30 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
 
-(def ^:const rrbt-concat-threshold 33)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Original set of values in rrb-vector library:
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;(def ^:const rrbt-concat-threshold 33)    ;; TBD: should be same as branch-factor plus 1?
+;;(def ^:const max-extra-search-steps 2)
+
+;;(def ^:const branch-factor 32)   ;; must be a power of 2, and I think also at least 4
+;;(def ^:const branch-factor-plus-one 33)
+;;(def ^:const branch-factor-minus-one 31)
+;;(def ^:const branch-factor-squared 1024)
+;;(def ^:const log-branch-factor 5)
+;;(def ^:const branch-factor-bitmask 0x1f)   ;; must be 1 less than branch-factor
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Experimental values with smaller branch factor, in hopes that test
+;; cases that exhibit bugs will be smaller, too.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:const rrbt-concat-threshold 5)    ;; TBD: should be same as branch-factor plus 1?
 (def ^:const max-extra-search-steps 2)
+
+
+
 
 (def ^:const elide-assertions? true)
 (def ^:const elide-debug-printouts? true)
@@ -304,7 +330,7 @@
     (if (zero? shift)
       ;; potentially return a short node, although it would be better to
       ;; make sure a regular leaf is always left at the right, with any
-      ;; items over the final 32 moved into tail (and then potentially
+      ;; items over the final 'branch-factor' moved into tail (and then potentially
       ;; back into the tree should the tail become too long...)
       (let [arr     (.array nm node)
             new-arr (.array am end)]
@@ -313,7 +339,7 @@
       (let [regular?  (.regular nm node)
             rngs      (if-not regular? (ranges nm node))
             i         (bit-and (bit-shift-right (unchecked-dec-int end) shift)
-                               (int 0x1f))
+                               (int branch-factor-bitmask))
             i         (if regular?
                         i
                         (loop [j i]
@@ -330,22 +356,22 @@
                           end))
             arr       (.array nm node)
             new-child (slice-right nm am (aget ^objects arr i)
-                                   (unchecked-subtract-int shift (int 5))
+                                   (unchecked-subtract-int shift (int log-branch-factor))
                                    child-end)
-            regular-child? (if (== shift (int 5))
-                             (== (int 32) (.alength am (.array nm new-child)))
+            regular-child? (if (== shift (int log-branch-factor))
+                             (== (int branch-factor) (.alength am (.array nm new-child)))
                              (.regular nm new-child))
-            new-arr   (object-array (if (and regular? regular-child?) 32 33))
+            new-arr   (object-array (if (and regular? regular-child?) branch-factor branch-factor-plus-one))
             new-child-rng  (if regular-child?
                              (let [m (mod child-end (bit-shift-left 1 shift))]
                                (if (zero? m) (bit-shift-left 1 shift) m))
-                             (if (== shift (int 5))
+                             (if (== shift (int log-branch-factor))
                                (.alength am (.array nm new-child))
                                (last-range nm new-child)))]
         (System/arraycopy arr 0 new-arr 0 i)
         (aset ^objects new-arr i new-child)
         (if-not (and regular? regular-child?)
-          (let [new-rngs (int-array 33)
+          (let [new-rngs (int-array branch-factor-plus-one)
                 step     (bit-shift-left (int 1) shift)]
             (if regular?
               (dotimes [j i]
@@ -357,8 +383,8 @@
                                 (aget new-rngs (unchecked-dec-int i))
                                 (int 0))
                               new-child-rng))
-            (aset new-rngs 32 (unchecked-inc-int i))
-            (aset new-arr 32 new-rngs)))
+            (aset new-rngs branch-factor (unchecked-inc-int i))
+            (aset new-arr branch-factor new-rngs)))
         (.node nm nil new-arr)))))
 
 (defn slice-left [^NodeManager nm ^ArrayManager am node shift start end]
@@ -375,7 +401,7 @@
       (let [regular? (.regular nm node)
             arr      (.array nm node)
             rngs     (if-not regular? (ranges nm node))
-            i        (bit-and (bit-shift-right start shift) (int 0x1f))
+            i        (bit-and (bit-shift-right start shift) (int branch-factor-bitmask))
             i        (if regular?
                        i
                        (loop [j i]
@@ -384,11 +410,11 @@
                            (recur (unchecked-inc-int j)))))
             len      (if regular?
                        (loop [i i]
-                         (if (or (== i (int 32))
+                         (if (or (== i (int branch-factor))
                                  (nil? (aget ^objects arr i)))
                            i
                            (recur (unchecked-inc-int i))))
-                       (aget rngs 32))
+                       (aget rngs branch-factor))
             child-start (if (pos? i)
                           (unchecked-subtract-int
                            start (if regular?
@@ -406,7 +432,7 @@
                                     end)))
             new-child   (slice-left nm am
                                     (aget ^objects arr i)
-                                    (unchecked-subtract-int shift (int 5))
+                                    (unchecked-subtract-int shift (int log-branch-factor))
                                     child-start
                                     child-end)
             new-len     (unchecked-subtract-int len i)
@@ -416,16 +442,16 @@
           nil
 
           regular?
-          (let [new-arr (object-array 33)
-                rngs    (int-array 33)
+          (let [new-arr (object-array branch-factor-plus-one)
+                rngs    (int-array branch-factor-plus-one)
                 rng0    (if (or (nil? new-child)
-                                (== shift (int 5))
+                                (== shift (int log-branch-factor))
                                 (.regular nm new-child))
                           (unchecked-subtract-int
                            (bit-shift-left (int 1) shift)
                            (bit-and (bit-shift-right
-                                     start (unchecked-subtract-int shift (int 5)))
-                                    (int 0x1f)))
+                                     start (unchecked-subtract-int shift (int log-branch-factor)))
+                                    (int branch-factor-bitmask)))
                           (int (last-range nm new-child)))
                 step    (bit-shift-left (int 1) shift)]
             (loop [j (int 0)
@@ -435,29 +461,29 @@
                 (recur (unchecked-inc-int j) (unchecked-add-int r step))))
             (when (> new-len 1)
               (aset rngs (dec new-len) (- end start)))
-            (aset rngs 32 new-len)
+            (aset rngs branch-factor new-len)
             (System/arraycopy arr (if (nil? new-child) (unchecked-inc-int i) i)
                               new-arr 0
                               new-len)
             (if-not (nil? new-child)
               (aset new-arr 0 new-child))
-            (aset new-arr 32 rngs)
+            (aset new-arr branch-factor rngs)
             (.node nm (.edit nm node) new-arr))
 
           :else
-          (let [new-arr  (object-array 33)
-                new-rngs (int-array 33)]
+          (let [new-arr  (object-array branch-factor-plus-one)
+                new-rngs (int-array branch-factor-plus-one)]
             (loop [j (int 0) i i]
               (when (< j new-len)
                 (aset new-rngs j (unchecked-subtract-int (aget rngs i) start))
                 (recur (unchecked-inc-int j) (unchecked-inc-int i))))
-            (aset new-rngs 32 new-len)
+            (aset new-rngs branch-factor new-len)
             (System/arraycopy arr (if (nil? new-child) (unchecked-inc-int i) i)
                               new-arr 0
                               new-len)
             (if-not (nil? new-child)
               (aset new-arr 0 new-child))
-            (aset new-arr 32 new-rngs)
+            (aset new-arr branch-factor new-rngs)
             (.node nm (.edit nm node) new-arr)))))))
 
 (declare splice-rrbts ->Transient)
@@ -536,23 +562,32 @@
           (loop [i i node root shift shift]
             (if (zero? shift)
               (let [arr (.array nm node)]
-                (.aget am arr (bit-and (bit-shift-right i shift) (int 0x1f))))
+                (.aget am arr (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))))
               (if (.regular nm node)
                 (let [arr (.array nm node)
-                      idx (bit-and (bit-shift-right i shift) (int 0x1f))]
+                      idx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                   (loop [i     i
                          node  (aget ^objects arr idx)
-                         shift (unchecked-subtract-int shift (int 5))]
+                         shift (unchecked-subtract-int shift (int log-branch-factor))]
                     (let [arr (.array nm node)
-                          idx (bit-and (bit-shift-right i shift) (int 0x1f))]
+                          idx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                       (if (zero? shift)
                         (.aget am arr idx)
                         (recur i
                                (aget ^objects arr idx)
-                               (unchecked-subtract-int shift (int 5)))))))
+                               (unchecked-subtract-int shift (int log-branch-factor)))))))
                 (let [arr  (.array nm node)
                       rngs (ranges nm node)
-                      idx  (loop [j (bit-and (bit-shift-right i shift) (int 0x1f))]
+                      idx  (loop [j (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
+                             (when (>= j (alength rngs))
+                               (throw (ex-info "j out of bounds"
+                                               {:j j,
+                                                :alength-rngs (alength rngs)
+                                                :arr arr
+                                                :i i
+                                                :node node
+                                                :shift shift
+                                                :this this})))
                              (if (< i (aget rngs j))
                                j
                                (recur (unchecked-inc-int j))))
@@ -562,7 +597,7 @@
                               (int i) (aget rngs (unchecked-dec-int idx))))]
                   (recur i
                          (aget ^objects arr idx)
-                         (unchecked-subtract-int shift (int 5)))))))))
+                         (unchecked-subtract-int shift (int log-branch-factor)))))))))
       (throw (IndexOutOfBoundsException.))))
 
   (nth [this i not-found]
@@ -572,7 +607,7 @@
 
   clojure.lang.IPersistentCollection
   (cons [this val]
-    (if (< (.alength am tail) (int 32))
+    (if (< (.alength am tail) (int branch-factor))
       (let [tail-len (.alength am tail)
             new-tail (.array am (unchecked-inc-int tail-len))]
         (System/arraycopy tail 0 new-tail 0 tail-len)
@@ -584,7 +619,7 @@
                         new-arr)]
         (if (overflow? nm root shift cnt)
           (if (.regular nm root)
-            (let [new-arr  (object-array 32)
+            (let [new-arr  (object-array branch-factor)
                   new-root (.node nm (.edit nm root) new-arr)]
               (doto new-arr
                 (aset (int 0) root)
@@ -592,28 +627,28 @@
               (Vector. nm
                        am
                        (unchecked-inc-int cnt)
-                       (unchecked-add-int shift (int 5))
+                       (unchecked-add-int shift (int log-branch-factor))
                        new-root
                        new-tail
                        _meta
                        -1
                        -1))
-            (let [new-arr  (object-array 33)
-                  new-rngs (ints (int-array 33))
+            (let [new-arr  (object-array branch-factor-plus-one)
+                  new-rngs (ints (int-array branch-factor-plus-one))
                   new-root (.node nm (.edit nm root) new-arr)
-                  root-total-range (aget (ranges nm root) (int 31))]
+                  root-total-range (aget (ranges nm root) (int branch-factor-minus-one))]
               (doto new-arr
                 (aset (int 0)  root)
                 (aset (int 1)  (.newPath this (.edit nm root) shift tail-node))
-                (aset (int 32) new-rngs))
+                (aset (int branch-factor) new-rngs))
               (doto new-rngs
                 (aset (int 0)  root-total-range)
-                (aset (int 1)  (unchecked-add-int root-total-range (int 32)))
-                (aset (int 32) (int 2)))
+                (aset (int 1)  (unchecked-add-int root-total-range (int branch-factor)))
+                (aset (int branch-factor) (int 2)))
               (Vector. nm
                        am
                        (unchecked-inc-int cnt)
-                       (unchecked-add-int shift (int 5))
+                       (unchecked-add-int shift (int log-branch-factor))
                        new-root
                        new-tail
                        _meta
@@ -627,7 +662,7 @@
                    -1)))))
 
   (empty [_]
-    (Vector. nm am 0 5 (.empty nm) (.array am 0) _meta -1 -1))
+    (Vector. nm am 0 log-branch-factor (.empty nm) (.array am 0) _meta -1 -1))
 
   (equiv [this that]
     (cond
@@ -657,7 +692,7 @@
       (throw (IllegalStateException. "Can't pop empty vector"))
 
       (== 1 cnt)
-      (Vector. nm am 0 5 (.empty nm) (.array am 0) _meta -1 -1)
+      (Vector. nm am 0 log-branch-factor (.empty nm) (.array am 0) _meta -1 -1)
 
       (> (.alength am tail) (int 1))
       (let [new-tail (.array am (unchecked-dec-int (.alength am tail)))]
@@ -673,12 +708,12 @@
           (Vector. nm am (unchecked-dec-int cnt) shift (.empty nm) new-tail
                    _meta -1 -1)
 
-          (and (> shift (int 5))
+          (and (> shift (int log-branch-factor))
                (nil? (aget ^objects (.array nm new-root) 1)))
           (Vector. nm
                    am
                    (unchecked-dec-int cnt)
-                   (unchecked-subtract-int shift (int 5))
+                   (unchecked-subtract-int shift (int log-branch-factor))
                    (aget ^objects (.array nm new-root) 0)
                    new-tail
                    _meta
@@ -792,15 +827,15 @@
             (.array nm node)
             (if (.regular nm node)
               (loop [node  (aget ^objects (.array nm node)
-                                 (bit-and (bit-shift-right i shift) (int 0x1f)))
-                     shift (unchecked-subtract-int shift (int 5))]
+                                 (bit-and (bit-shift-right i shift) (int branch-factor-bitmask)))
+                     shift (unchecked-subtract-int shift (int log-branch-factor))]
                 (if (zero? shift)
                   (.array nm node)
                   (recur (aget ^objects (.array nm node)
-                               (bit-and (bit-shift-right i shift) (int 0x1f)))
-                         (unchecked-subtract-int shift (int 5)))))
+                               (bit-and (bit-shift-right i shift) (int branch-factor-bitmask)))
+                         (unchecked-subtract-int shift (int log-branch-factor)))))
               (let [rngs (ranges nm node)
-                    j    (loop [j (bit-and (bit-shift-right i shift) (int 0x1f))]
+                    j    (loop [j (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                            (if (< i (aget rngs j))
                              j
                              (recur (unchecked-inc-int j))))
@@ -810,7 +845,7 @@
                            i)]
                 (recur (int i)
                        (aget ^objects (.array nm node) j)
-                       (unchecked-subtract-int shift (int 5)))))))) 
+                       (unchecked-subtract-int shift (int log-branch-factor)))))))) 
       (throw (IndexOutOfBoundsException.))))
 
   (pushTail [this shift cnt node tail-node]
@@ -820,25 +855,25 @@
         (loop [node ret shift (int shift)]
           (let [arr    (.array nm node)
                 subidx (bit-and (bit-shift-right (unchecked-dec-int cnt) shift)
-                                (int 0x1f))]
-            (if (== shift (int 5))
+                                (int branch-factor-bitmask))]
+            (if (== shift (int log-branch-factor))
               (aset ^objects arr subidx tail-node)
               (if-let [child (aget ^objects arr subidx)]
                 (let [new-carr  (aclone ^objects (.array nm child))
                       new-child (.node nm (.edit nm root) new-carr)]
                   (aset ^objects arr subidx new-child)
-                  (recur new-child (unchecked-subtract-int shift (int 5))))
+                  (recur new-child (unchecked-subtract-int shift (int log-branch-factor))))
                 (aset ^objects arr subidx
                       (.newPath this (.edit nm root)
                                 (unchecked-subtract-int
-                                 shift (int 5))
+                                 shift (int log-branch-factor))
                                 tail-node))))))
         ret)
       (let [arr  (aclone ^objects (.array nm node))
             rngs (ranges nm node)
-            li   (unchecked-dec-int (aget rngs 32))
+            li   (unchecked-dec-int (aget rngs branch-factor))
             ret  (.node nm (.edit nm node) arr)
-            cret (if (== shift (int 5))
+            cret (if (== shift (int log-branch-factor))
                    nil
                    (let [child (aget ^objects arr li)
                          ccnt  (if (pos? li)
@@ -848,32 +883,32 @@
                                  (aget rngs 0))]
                      (if-not (== ccnt (bit-shift-left 1 shift))
                        (.pushTail this
-                                  (unchecked-subtract-int shift (int 5))
+                                  (unchecked-subtract-int shift (int log-branch-factor))
                                   (unchecked-inc-int ccnt)
                                   (aget ^objects arr li)
                                   tail-node))))]
         (if cret
           (do (aset ^objects arr li cret)
-              (aset rngs li (unchecked-add-int (aget rngs li) (int 32)))
+              (aset rngs li (unchecked-add-int (aget rngs li) (int branch-factor)))
               ret)
           (do (aset ^objects arr (unchecked-inc-int li)
                     (.newPath this (.edit nm root)
-                              (unchecked-subtract-int shift (int 5))
+                              (unchecked-subtract-int shift (int log-branch-factor))
                               tail-node))
               (aset rngs (unchecked-inc-int li)
-                    (unchecked-add-int (aget rngs li) (int 32)))
-              (aset rngs 32 (unchecked-inc-int (aget rngs 32)))
+                    (unchecked-add-int (aget rngs li) (int branch-factor)))
+              (aset rngs branch-factor (unchecked-inc-int (aget rngs branch-factor)))
               ret)))))
 
   (popTail [this shift cnt node]
     (if (.regular nm node)
       (let [subidx (bit-and
                     (bit-shift-right (unchecked-dec-int cnt) (int shift))
-                    (int 0x1f))]
+                    (int branch-factor-bitmask))]
         (cond
-          (> (int shift) (int 5))
+          (> (int shift) (int log-branch-factor))
           (let [new-child (.popTail this
-                                    (unchecked-subtract-int (int shift) (int 5))
+                                    (unchecked-subtract-int (int shift) (int log-branch-factor))
                                     cnt
                                     (aget ^objects (.array nm node) subidx))]
             (if (and (nil? new-child) (zero? subidx))
@@ -891,16 +926,16 @@
             (.node nm (.edit nm root) arr))))
       (let [subidx (int (bit-and
                          (bit-shift-right (unchecked-dec-int cnt) (int shift))
-                         (int 0x1f)))
+                         (int branch-factor-bitmask)))
             rngs   (ranges nm node)
             subidx (int (loop [subidx subidx]
                           (if (or (zero? (aget rngs (unchecked-inc-int subidx)))
-                                  (== subidx (int 31)))
+                                  (== subidx (int branch-factor-minus-one)))
                             subidx
                             (recur (unchecked-inc-int subidx)))))
             new-rngs (aclone rngs)]
         (cond
-          (> (int shift) (int 5))
+          (> (int shift) (int log-branch-factor))
           (let [child     (aget ^objects (.array nm node) subidx)
                 child-cnt (if (zero? subidx)
                             (aget rngs 0)
@@ -908,7 +943,7 @@
                              (aget rngs subidx)
                              (aget rngs (unchecked-dec-int subidx))))
                 new-child (.popTail this
-                                    (unchecked-subtract-int (int shift) (int 5))
+                                    (unchecked-subtract-int (int shift) (int log-branch-factor))
                                     child-cnt
                                     child)]
             (cond
@@ -918,11 +953,11 @@
               (.regular nm child)
               (let [arr (aclone ^objects (.array nm node))]
                 (aset new-rngs subidx
-                      (unchecked-subtract-int (aget new-rngs subidx) (int 32)))
+                      (unchecked-subtract-int (aget new-rngs subidx) (int branch-factor)))
                 (aset arr subidx new-child)
-                (aset arr (int 32) new-rngs)
+                (aset arr (int branch-factor) new-rngs)
                 (if (nil? new-child)
-                  (aset new-rngs 32 (unchecked-dec-int (aget new-rngs 32))))
+                  (aset new-rngs branch-factor (unchecked-dec-int (aget new-rngs branch-factor))))
                 (.node nm (.edit nm root) arr))
 
               :else
@@ -936,9 +971,9 @@
                 (aset new-rngs subidx
                       (unchecked-subtract-int (aget new-rngs subidx) diff))
                 (aset arr subidx new-child)
-                (aset arr (int 32) new-rngs)
+                (aset arr (int branch-factor) new-rngs)
                 (if (nil? new-child)
-                  (aset new-rngs 32 (unchecked-dec-int (aget new-rngs 32))))
+                  (aset new-rngs branch-factor (unchecked-dec-int (aget new-rngs branch-factor))))
                 (.node nm (.edit nm root) arr))))
 
           (zero? subidx)
@@ -949,33 +984,33 @@
                 child    (aget arr subidx)
                 new-rngs (aclone rngs)]
             (aset arr subidx nil)
-            (aset arr (int 32) new-rngs)
+            (aset arr (int branch-factor) new-rngs)
             (aset new-rngs subidx 0)
-            (aset new-rngs 32 (unchecked-dec-int (aget new-rngs (int 32))))
+            (aset new-rngs branch-factor (unchecked-dec-int (aget new-rngs (int branch-factor))))
             (.node nm (.edit nm root) arr))))))
 
   (newPath [this ^AtomicReference edit ^int shift node]
-    (if (== (.alength am tail) (int 32))
+    (if (== (.alength am tail) (int branch-factor))
       (let [shift (int shift)]
         (loop [s (int 0) node node]
           (if (== s shift)
             node
-            (let [arr (object-array 32)
+            (let [arr (object-array branch-factor)
                   ret (.node nm edit arr)]
               (aset arr 0 node)
-              (recur (unchecked-add-int s (int 5)) ret)))))
+              (recur (unchecked-add-int s (int log-branch-factor)) ret)))))
       (let [shift (int shift)]
         (loop [s (int 0) node node]
           (if (== s shift)
             node
-            (let [arr  (object-array 33)
-                  rngs (int-array 33)
+            (let [arr  (object-array branch-factor-plus-one)
+                  rngs (int-array branch-factor-plus-one)
                   ret  (.node nm edit arr)]
               (aset arr 0 node)
-              (aset arr 32 rngs)
-              (aset rngs 32 1)
+              (aset arr branch-factor rngs)
+              (aset rngs branch-factor 1)
               (aset rngs 0 (.alength am tail))
-              (recur (unchecked-add-int s (int 5)) ret)))))))
+              (recur (unchecked-add-int s (int log-branch-factor)) ret)))))))
 
   (doAssoc [this shift node i val]
     (if (.regular nm node)
@@ -984,16 +1019,16 @@
                node  node]
           (if (zero? shift)
             (let [arr (.array nm node)]
-              (.aset am arr (bit-and i (int 0x1f)) val))
+              (.aset am arr (bit-and i (int branch-factor-bitmask)) val))
             (let [arr    (.array nm node)
-                  subidx (bit-and (bit-shift-right i shift) (int 0x1f))
+                  subidx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))
                   child  (.clone nm am shift (aget ^objects arr subidx))]
               (aset ^objects arr subidx child)
-              (recur (unchecked-subtract-int shift (int 5)) child))))
+              (recur (unchecked-subtract-int shift (int log-branch-factor)) child))))
         node)
       (let [arr    (aclone ^objects (.array nm node))
             rngs   (ranges nm node)
-            subidx (bit-and (bit-shift-right i shift) (int 0x1f))
+            subidx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))
             subidx (loop [subidx subidx]
                      (if (< i (aget rngs subidx))
                        subidx
@@ -1004,7 +1039,7 @@
                       i (aget rngs (unchecked-dec-int subidx))))]
         (aset arr subidx
               (.doAssoc this
-                        (unchecked-subtract-int (int shift) (int 5))
+                        (unchecked-subtract-int (int shift) (int log-branch-factor))
                         (aget arr subidx)
                         i
                         val))
@@ -1072,7 +1107,7 @@
               (System/arraycopy tail (unchecked-subtract-int start tail-off)
                                 new-tail 0
                                 new-cnt)
-              (Vector. nm am new-cnt (int 5) (.empty nm) new-tail _meta -1 -1))
+              (Vector. nm am new-cnt (int log-branch-factor) (.empty nm) new-tail _meta -1 -1))
             (let [tail-cut? (> end tail-off)
                   new-root  (if tail-cut?
                               root
@@ -1097,13 +1132,13 @@
                                                  (.array am 0) nil -1 -1)
                                         shift new-cnt new-root))]
               (if (nil? new-root)
-                (Vector. nm am new-cnt 5 (.empty nm) new-tail _meta -1 -1)
+                (Vector. nm am new-cnt log-branch-factor (.empty nm) new-tail _meta -1 -1)
                 (loop [r new-root
                        s (int shift)]
-                  (if (and (> s (int 5))
+                  (if (and (> s (int log-branch-factor))
                            (nil? (aget ^objects (.array nm r) 1)))
                     (recur (aget ^objects (.array nm r) 0)
-                           (unchecked-subtract-int s (int 5)))
+                           (unchecked-subtract-int s (int log-branch-factor)))
                     (Vector. nm am new-cnt s r new-tail _meta -1 -1))))))))))
 
   PSpliceableVector
@@ -1255,21 +1290,21 @@
 
     (.regular nm node)
     (recur nm
-           (.node nm (.edit nm node) (doto (object-array 32) (aset 0 node)))
-           (unchecked-add-int (int 5) (int from))
+           (.node nm (.edit nm node) (doto (object-array branch-factor) (aset 0 node)))
+           (unchecked-add-int (int log-branch-factor) (int from))
            to)
 
     :else
     (recur nm
            (.node nm
                   (.edit nm node)
-                  (doto (object-array 33)
+                  (doto (object-array branch-factor-plus-one)
                     (aset 0 node)
-                    (aset 32
-                          (ints (doto (int-array 33)
+                    (aset branch-factor
+                          (ints (doto (int-array branch-factor-plus-one)
                                   (aset 0  (int (last-range nm node)))
-                                  (aset 32 (int 1)))))))
-           (unchecked-add-int (int 5) (int from))
+                                  (aset branch-factor (int 1)))))))
+           (unchecked-add-int (int log-branch-factor) (int from))
            to)))
 
 (defn pair ^"[Ljava.lang.Object;" [x y]
@@ -1284,20 +1319,20 @@
       (if (.regular nm node)
         (index-of-nil arr)
         (let [rngs (ranges nm node)]
-          (aget rngs 32))))))
+          (aget rngs branch-factor))))))
 
 (defn subtree-branch-count [^NodeManager nm ^ArrayManager am node shift]
   ;; NB. positive shifts only
   (let [arr (.array nm node)
-        cs  (- shift 5)]
+        cs  (- shift log-branch-factor)]
     (if (.regular nm node)
       (loop [i 0 sbc 0]
-        (if (== i 32)
+        (if (== i branch-factor)
           sbc
           (if-let [child (aget ^objects arr i)]
             (recur (inc i) (+ sbc (long (slot-count nm am child cs))))
             sbc)))
-      (let [lim (aget (ranges nm node) 32)]
+      (let [lim (aget (ranges nm node) branch-factor)]
         (loop [i 0 sbc 0]
           (if (== i lim)
             sbc
@@ -1309,23 +1344,23 @@
 
 (defn rebalance-leaves
   [^NodeManager nm ^ArrayManager am n1 cnt1 n2 cnt2 ^Box transferred-leaves]
-  (let [slc1 (slot-count nm am n1 5)
-        slc2 (slot-count nm am n2 5)
+  (let [slc1 (slot-count nm am n1 log-branch-factor)
+        slc2 (slot-count nm am n2 log-branch-factor)
         a    (+ slc1 slc2)
-        sbc1 (subtree-branch-count nm am n1 5)
-        sbc2 (subtree-branch-count nm am n2 5)
+        sbc1 (subtree-branch-count nm am n1 log-branch-factor)
+        sbc2 (subtree-branch-count nm am n2 log-branch-factor)
         p    (+ sbc1 sbc2)
-        e    (- a (inc (quot (dec p) 32)))]
+        e    (- a (inc (quot (dec p) branch-factor)))]
     (cond
       (<= e max-extra-search-steps)
       (pair n1 n2)
 
-      (<= (+ sbc1 sbc2) 1024)
-      (let [reg?    (zero? (mod p 32))
-            new-arr (object-array (if reg? 32 33))
+      (<= (+ sbc1 sbc2) branch-factor-squared)
+      (let [reg?    (zero? (mod p branch-factor))
+            new-arr (object-array (if reg? branch-factor branch-factor-plus-one))
             new-n1  (.node nm nil new-arr)]
         (loop [i  0
-               bs (partition-all 32
+               bs (partition-all branch-factor
                                  (concat (leaf-seq nm (.array nm n1))
                                          (leaf-seq nm (.array nm n2))))]
           (when-first [block bs]
@@ -1337,18 +1372,18 @@
               (aset new-arr i (.node nm nil a))
               (recur (inc i) (next bs)))))
         (if-not reg?
-          (aset new-arr 32 (regular-ranges 5 p)))
+          (aset new-arr branch-factor (regular-ranges log-branch-factor p)))
         (set! (.-val transferred-leaves) sbc2)
         (pair new-n1 nil))
 
       :else
-      (let [reg?     (zero? (mod p 32))
-            new-arr1 (object-array 32)
-            new-arr2 (object-array (if reg? 32 33))
+      (let [reg?     (zero? (mod p branch-factor))
+            new-arr1 (object-array branch-factor)
+            new-arr2 (object-array (if reg? branch-factor branch-factor-plus-one))
             new-n1   (.node nm nil new-arr1)
             new-n2   (.node nm nil new-arr2)]
         (loop [i  0
-               bs (partition-all 32
+               bs (partition-all branch-factor
                                  (concat (leaf-seq nm (.array nm n1))
                                          (leaf-seq nm (.array nm n2))))]
           (when-first [block bs]
@@ -1357,13 +1392,13 @@
                 (when xs
                   (.aset am a i (first xs))
                   (recur (inc i) (next xs))))
-              (if (< i 32)
+              (if (< i branch-factor)
                 (aset new-arr1 i (.node nm nil a))
-                (aset new-arr2 (- i 32) (.node nm nil a)))
+                (aset new-arr2 (- i branch-factor) (.node nm nil a)))
               (recur (inc i) (next bs)))))
         (if-not reg?
-          (aset new-arr2 32 (regular-ranges 5 (- p 1024))))
-        (set! (.-val transferred-leaves) (- 1024 sbc1))
+          (aset new-arr2 branch-factor (regular-ranges log-branch-factor (- p branch-factor-squared))))
+        (set! (.-val transferred-leaves) (- branch-factor-squared sbc1))
         (pair new-n1 new-n2)))))
 
 (defn child-seq [^NodeManager nm node shift cnt]
@@ -1371,13 +1406,13 @@
         rngs (if (.regular nm node)
                (ints (regular-ranges shift cnt))
                (ranges nm node))
-        cs   (if rngs (aget rngs 32) (index-of-nil arr))
+        cs   (if rngs (aget rngs branch-factor) (index-of-nil arr))
         cseq (fn cseq [c r]
                (let [arr  (.array nm c)
                      rngs (if (.regular nm c)
-                            (ints (regular-ranges (- shift 5) r))
+                            (ints (regular-ranges (- shift log-branch-factor) r))
                             (ranges nm c))
-                     gcs  (if rngs (aget rngs 32) (index-of-nil arr))]
+                     gcs  (if rngs (aget rngs branch-factor) (index-of-nil arr))]
                  (map list (take gcs arr) (take gcs (map - rngs (cons 0 rngs))))))]
     (mapcat cseq (take cs arr) (take cs (map - rngs (cons 0 rngs))))))
 
@@ -1391,24 +1426,24 @@
           sbc1 (subtree-branch-count nm am n1 shift)
           sbc2 (subtree-branch-count nm am n2 shift)
           p    (+ sbc1 sbc2)
-          e    (- a (inc (quot (dec p) 32)))]
+          e    (- a (inc (quot (dec p) branch-factor)))]
       (cond
         (<= e max-extra-search-steps)
         (pair n1 n2)
 
-        (<= (+ sbc1 sbc2) 1024)
-        (let [new-arr  (object-array 33)
-              new-rngs (int-array 33)
+        (<= (+ sbc1 sbc2) branch-factor-squared)
+        (let [new-arr  (object-array branch-factor-plus-one)
+              new-rngs (int-array branch-factor-plus-one)
               new-n1   (.node nm nil new-arr)]
           (loop [i  0
-                 bs (partition-all 32
+                 bs (partition-all branch-factor
                                    (concat (child-seq nm n1 shift cnt1)
                                            (child-seq nm n2 shift cnt2)))]
             (when-first [block bs]
-              (let [a (object-array 33)
-                    r (int-array 33)]
-                (aset a 32 r)
-                (aset r 32 (count block))
+              (let [a (object-array branch-factor-plus-one)
+                    r (int-array branch-factor-plus-one)]
+                (aset a branch-factor r)
+                (aset r branch-factor (count block))
                 (loop [i 0 o (int 0) gcs (seq block)]
                   (when-first [[gc gcr] gcs]
                     (aset ^objects a i gc)
@@ -1416,59 +1451,59 @@
                     (recur (inc i) (unchecked-add-int o (int gcr)) (next gcs))))
                 (aset ^objects new-arr i (.node nm nil a))
                 (aset new-rngs i
-                      (+ (aget r (dec (aget r 32)))
+                      (+ (aget r (dec (aget r branch-factor)))
                          (if (pos? i) (aget new-rngs (dec i)) (int 0))))
-                (aset new-rngs 32 (inc i))
+                (aset new-rngs branch-factor (inc i))
                 (recur (inc i) (next bs)))))
-          (aset new-arr 32 new-rngs)
+          (aset new-arr branch-factor new-rngs)
           (set! (.-val transferred-leaves) cnt2)
           (pair new-n1 nil))
 
         :else
-        (let [new-arr1  (object-array 33)
-              new-arr2  (object-array 33)
-              new-rngs1 (int-array 33)
-              new-rngs2 (int-array 33)
+        (let [new-arr1  (object-array branch-factor-plus-one)
+              new-arr2  (object-array branch-factor-plus-one)
+              new-rngs1 (int-array branch-factor-plus-one)
+              new-rngs2 (int-array branch-factor-plus-one)
               new-n1    (.node nm nil new-arr1)
               new-n2    (.node nm nil new-arr2)]
           (loop [i  0
-                 bs (partition-all 32
+                 bs (partition-all branch-factor
                                    (concat (child-seq nm n1 shift cnt1)
                                            (child-seq nm n2 shift cnt2)))]
             (when-first [block bs]
-              (let [a (object-array 33)
-                    r (int-array 33)]
-                (aset a 32 r)
-                (aset r 32 (count block))
+              (let [a (object-array branch-factor-plus-one)
+                    r (int-array branch-factor-plus-one)]
+                (aset a branch-factor r)
+                (aset r branch-factor (count block))
                 (loop [i 0 o (int 0) gcs (seq block)]
                   (when-first [[gc gcr] gcs]
                     (aset a i gc)
                     (aset r i (unchecked-add-int o (int gcr)))
                     (recur (inc i) (unchecked-add-int o (int gcr)) (next gcs))))
-                (if (and (< i 32) (> (+ (* i 32) (count block)) sbc1))
-                  (let [tbs (- (+ (* i 32) (count block)) sbc1)
-                        li  (dec (aget r 32))
-                        d   (if (>= tbs 32)
+                (if (and (< i branch-factor) (> (+ (* i branch-factor) (count block)) sbc1))
+                  (let [tbs (- (+ (* i branch-factor) (count block)) sbc1)
+                        li  (dec (aget r branch-factor))
+                        d   (if (>= tbs branch-factor)
                               (aget r li)
                               (- (aget r li) (aget r (- li tbs))))]
                     (set! (.-val transferred-leaves)
                           (+ (.-val transferred-leaves) d))))
-                (let [new-arr  (if (< i 32) new-arr1 new-arr2)
-                      new-rngs (if (< i 32) new-rngs1 new-rngs2)
-                      i        (mod i 32)]
+                (let [new-arr  (if (< i branch-factor) new-arr1 new-arr2)
+                      new-rngs (if (< i branch-factor) new-rngs1 new-rngs2)
+                      i        (mod i branch-factor)]
                   (aset ^objects new-arr i (.node nm nil a))
                   (aset new-rngs i
-                        (+ (aget r (dec (aget r 32)))
+                        (+ (aget r (dec (aget r branch-factor)))
                            (if (pos? i) (aget new-rngs (dec i)) (int 0))))
-                  (aset new-rngs 32 (int (inc i))))
+                  (aset new-rngs branch-factor (int (inc i))))
                 (recur (inc i) (next bs)))))
-          (aset new-arr1 32 new-rngs1)
-          (aset new-arr2 32 new-rngs2)
+          (aset new-arr1 branch-factor new-rngs1)
+          (aset new-arr2 branch-factor new-rngs2)
           (pair new-n1 new-n2))))))
 
 (defn zippath
   [^NodeManager nm ^ArrayManager am shift n1 cnt1 n2 cnt2 ^Box transferred-leaves]
-  (if (== shift 5)
+  (if (== shift log-branch-factor)
     (rebalance-leaves nm am n1 cnt1 n2 cnt2 transferred-leaves)
     (let [c1 (last-child nm n1)
           c2 (first-child nm n2)
@@ -1476,7 +1511,7 @@
                   (let [m (mod cnt1 (bit-shift-left 1 shift))]
                     (if (zero? m) (bit-shift-left 1 shift) m))
                   (let [rngs (ranges nm n1)
-                        i    (dec (aget rngs 32))]
+                        i    (dec (aget rngs branch-factor))]
                     (if (zero? i)
                       (aget rngs 0)
                       (- (aget rngs i) (aget rngs (dec i))))))
@@ -1485,7 +1520,7 @@
                     (if (zero? m) (bit-shift-left 1 shift) m))
                   (aget (ranges nm n2) 0))
           next-transferred-leaves (Box. 0)
-          [new-c1 new-c2] (zippath nm am (- shift 5) c1 ccnt1 c2 ccnt2
+          [new-c1 new-c2] (zippath nm am (- shift log-branch-factor) c1 ccnt1 c2 ccnt2
                                    next-transferred-leaves)
           d (.-val next-transferred-leaves)]
       (set! (.-val transferred-leaves) (+ (.-val transferred-leaves) d))
@@ -1508,10 +1543,10 @@
         li1   (index-of-nil arr1)
         li2   (index-of-nil arr2)
         slots (concat (take li1 arr1) (take li2 arr2))]
-    (if (> (count slots) 32)
+    (if (> (count slots) branch-factor)
       (pair n1 n2)
-      (let [new-rngs (int-array 33)
-            new-arr  (object-array 33)
+      (let [new-rngs (int-array branch-factor-plus-one)
+            new-arr  (object-array branch-factor-plus-one)
             rngs1    (take li1 (if (.regular nm n1)
                                  (regular-ranges shift cnt1)
                                  (ranges nm n1)))
@@ -1521,7 +1556,7 @@
             rngs2    (let [r (last rngs1)]
                        (map #(+ % r) rngs2))
             rngs     (concat rngs1 rngs2)]
-        (aset new-arr 32 new-rngs)
+        (aset new-arr branch-factor new-rngs)
         (loop [i 0 cs (seq slots)]
           (when cs
             (aset new-arr i (first cs))
@@ -1530,7 +1565,7 @@
           (if rngs
             (do (aset new-rngs i (int (first rngs)))
                 (recur (inc i) (next rngs)))
-            (aset new-rngs 32 i)))
+            (aset new-rngs branch-factor i)))
         (pair (.node nm nil new-arr) nil)))))
 
 (defn splice-rrbts [^NodeManager nm ^ArrayManager am ^Vector v1 ^Vector v2]
@@ -1541,23 +1576,23 @@
     (let [s1 (.-shift v1)
           s2 (.-shift v2)
           r1 (.-root v1)
-          o? (overflow? nm r1 s1 (+ (count v1) (- 32 (.alength am (.-tail v1)))))
+          o? (overflow? nm r1 s1 (+ (count v1) (- branch-factor (.alength am (.-tail v1)))))
           r1 (if o?
                (let [tail      (.-tail v1)
                      tail-node (.node nm nil tail)
-                     reg?      (and (.regular nm r1) (== (.alength am tail) 32))
-                     arr       (object-array (if reg? 32 33))]
+                     reg?      (and (.regular nm r1) (== (.alength am tail) branch-factor))
+                     arr       (object-array (if reg? branch-factor branch-factor-plus-one))]
                  (aset arr 0 r1)
                  (aset arr 1 (new-path nm am s1 tail-node))
                  (if-not reg?
-                   (let [rngs (int-array 33)]
-                     (aset rngs 32 2)
+                   (let [rngs (int-array branch-factor-plus-one)]
+                     (aset rngs branch-factor 2)
                      (aset rngs 0 (- (count v1) (.alength am tail)))
                      (aset rngs 1 (count v1))
-                     (aset arr 32 rngs)))
+                     (aset arr branch-factor rngs)))
                  (.node nm nil arr))
                (fold-tail nm am r1 s1 (.tailoff v1) (.-tail v1)))
-          s1 (if o? (+ s1 5) s1)
+          s1 (if o? (+ s1 log-branch-factor) s1)
           r2 (.-root v2)
           s  (max s1 s2)
           r1 (shift-from-to nm r1 s1 s)
@@ -1581,22 +1616,22 @@
                     (int ncnt2)
                     (int 0))]
       (if n2
-        (let [arr      (object-array 33)
+        (let [arr      (object-array branch-factor-plus-one)
               new-root (.node nm nil arr)]
           (aset arr 0 n1)
           (aset arr 1 n2)
-          (aset arr 32 (doto (int-array 33)
+          (aset arr branch-factor (doto (int-array branch-factor-plus-one)
                          (aset 0 ncnt1)
                          (aset 1 (+ ncnt1 ncnt2))
-                         (aset 32 2)))
-          (Vector. nm am (+ (count v1) (count v2)) (+ s 5) new-root (.-tail v2)
+                         (aset branch-factor 2)))
+          (Vector. nm am (+ (count v1) (count v2)) (+ s log-branch-factor) new-root (.-tail v2)
                    nil -1 -1))
         (loop [r n1
                s (int s)]
-          (if (and (> s (int 5))
+          (if (and (> s (int log-branch-factor))
                    (nil? (aget ^objects (.array nm r) 1)))
             (recur (aget ^objects (.array nm r) 0)
-                   (unchecked-subtract-int s (int 5)))
+                   (unchecked-subtract-int s (int log-branch-factor)))
             (Vector. nm am (+ (count v1) (count v2)) s r (.-tail v2)
                      nil -1 -1)))))))
 
@@ -1632,23 +1667,23 @@
           (loop [i i node root shift shift]
             (if (zero? shift)
               (let [arr (.array nm node)]
-                (.aget am arr (bit-and (bit-shift-right i shift) (int 0x1f))))
+                (.aget am arr (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))))
               (if (.regular nm node)
                 (let [arr (.array nm node)
-                      idx (bit-and (bit-shift-right i shift) (int 0x1f))]
+                      idx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                   (loop [i     i
                          node  (aget ^objects arr idx)
-                         shift (unchecked-subtract-int shift (int 5))]
+                         shift (unchecked-subtract-int shift (int log-branch-factor))]
                     (let [arr (.array nm node)
-                          idx (bit-and (bit-shift-right i shift) (int 0x1f))]
+                          idx (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                       (if (zero? shift)
                         (.aget am arr idx)
                         (recur i
                                (aget ^objects arr idx)
-                               (unchecked-subtract-int shift (int 5)))))))
+                               (unchecked-subtract-int shift (int log-branch-factor)))))))
                 (let [arr  (.array nm node)
                       rngs (ranges nm node)
-                      idx  (loop [j (bit-and (bit-shift-right i shift) (int 0x1f))]
+                      idx  (loop [j (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                              (if (< i (aget rngs j))
                                j
                                (recur (unchecked-inc-int j))))
@@ -1658,7 +1693,7 @@
                               (int i) (aget rngs (unchecked-dec-int idx))))]
                   (recur i
                          (aget ^objects arr idx)
-                         (unchecked-subtract-int shift (int 5)))))))))
+                         (unchecked-subtract-int shift (int log-branch-factor)))))))))
       (throw (IndexOutOfBoundsException.))))
 
   (nth [this i not-found]
@@ -1703,42 +1738,42 @@
   clojure.lang.ITransientCollection
   (conj [this val]
     (.ensureEditable transient-helper nm root)
-    (if (< tidx 32)
+    (if (< tidx branch-factor)
       (do (.aset am tail tidx val)
           (set! cnt  (unchecked-inc-int cnt))
           (set! tidx (unchecked-inc-int tidx))
           this)
       (let [tail-node (.node nm (.edit nm root) tail)
-            new-tail  (.array am 32)]
+            new-tail  (.array am branch-factor)]
         (.aset am new-tail 0 val)
         (set! tail new-tail)
         (set! tidx (int 1))
         (if (overflow? nm root shift cnt)
           (if (.regular nm root)
-            (let [new-arr (object-array 32)]
+            (let [new-arr (object-array branch-factor)]
               (doto new-arr
                 (aset 0 root)
                 (aset 1 (.newPath transient-helper nm am
                                   tail (.edit nm root) shift tail-node)))
               (set! root  (.node nm (.edit nm root) new-arr))
-              (set! shift (unchecked-add-int shift (int 5)))
+              (set! shift (unchecked-add-int shift (int log-branch-factor)))
               (set! cnt   (unchecked-inc-int cnt))
               this)
-            (let [new-arr  (object-array 33)
-                  new-rngs (int-array 33)
+            (let [new-arr  (object-array branch-factor-plus-one)
+                  new-rngs (int-array branch-factor-plus-one)
                   new-root (.node nm (.edit nm root) new-arr)
-                  root-total-range (aget (ranges nm root) 31)]
+                  root-total-range (aget (ranges nm root) branch-factor-minus-one)]
               (doto new-arr
                 (aset 0  root)
                 (aset 1  (.newPath transient-helper nm am
                                    tail (.edit nm root) shift tail-node))
-                (aset 32 new-rngs))
+                (aset branch-factor new-rngs))
               (doto new-rngs
                 (aset 0  root-total-range)
-                (aset 1  (unchecked-add-int root-total-range (int 32)))
-                (aset 32 2))
+                (aset 1  (unchecked-add-int root-total-range (int branch-factor)))
+                (aset branch-factor 2))
               (set! root  new-root)
-              (set! shift (unchecked-add-int shift (int 5)))
+              (set! shift (unchecked-add-int shift (int log-branch-factor)))
               (set! cnt   (unchecked-inc-int cnt))
               this))
           (let [new-root (.pushTail transient-helper nm am
@@ -1805,15 +1840,15 @@
               (set! root (.ensureEditable transient-helper nm am
                                           (.edit nm root)
                                           (.empty nm)
-                                          5))
+                                          log-branch-factor))
               (set! tail new-tail)
               (set! tidx new-tidx)
               this)
 
-          (and (> shift 5)
+          (and (> shift log-branch-factor)
                (nil? (aget ^objects (.array nm new-root) 1)))
           (do (set! cnt   (unchecked-dec-int cnt))
-              (set! shift (unchecked-subtract-int shift (int 5)))
+              (set! shift (unchecked-subtract-int shift (int log-branch-factor)))
               (set! root  (aget ^objects (.array nm new-root) 0))
               (set! tail  new-tail)
               (set! tidx  new-tidx)
@@ -1844,15 +1879,15 @@
             (.array nm node)
             (if (.regular nm node)
               (loop [node  (aget ^objects (.array nm node)
-                                 (bit-and (bit-shift-right i shift) (int 0x1f)))
-                     shift (unchecked-subtract-int shift (int 5))]
+                                 (bit-and (bit-shift-right i shift) (int branch-factor-bitmask)))
+                     shift (unchecked-subtract-int shift (int log-branch-factor))]
                 (if (zero? shift)
                   (.array nm node)
                   (recur (aget ^objects (.array nm node)
-                               (bit-and (bit-shift-right i shift) (int 0x1f)))
-                         (unchecked-subtract-int shift (int 5)))))
+                               (bit-and (bit-shift-right i shift) (int branch-factor-bitmask)))
+                         (unchecked-subtract-int shift (int log-branch-factor)))))
               (let [rngs (ranges nm node)
-                    j    (loop [j (bit-and (bit-shift-right i shift) (int 0x1f))]
+                    j    (loop [j (bit-and (bit-shift-right i shift) (int branch-factor-bitmask))]
                            (if (< i (aget rngs j))
                              j
                              (recur (unchecked-inc-int j))))
@@ -1862,5 +1897,5 @@
                            i)]
                 (recur (int i)
                        (aget ^objects (.array nm node) j)
-                       (unchecked-subtract-int shift (int 5)))))))) 
+                       (unchecked-subtract-int shift (int log-branch-factor)))))))) 
       (throw (IndexOutOfBoundsException.)))))
