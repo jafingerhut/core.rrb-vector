@@ -10,16 +10,22 @@
                  "src/main/cljs"]
   :test-paths ["src/test/clojure"]
   :jvm-opts ^:replace ["-XX:+UseG1GC"]
-  :profiles {:dev {:test-paths ["src/test_local/clojure"]
-                   :dependencies [[org.clojure/test.check "0.9.0"]
-                                  [collection-check "0.1.7"]]
+  :profiles {:dev {:dependencies [[org.clojure/test.check "0.7.0"]]
                    :plugins [[lein-cljsbuild "1.1.7"]]}
+             ;; Using collections-check requires these minimum
+             ;; versions of Clojure and test.check
+             :check {:dependencies [[collection-check "0.1.7"]
+                                    [org.clojure/clojure "1.7.0"]
+                                    [org.clojure/test.check "0.9.0"]]
+                     :test-paths ["src/test_local/clojure"]}
              :cljs {:dependencies [[org.clojure/clojure "1.10.0"]
                                    [org.clojure/clojurescript "1.10.238"]]}
              :1.6 {:dependencies [[org.clojure/clojure "1.6.0"]]}
              :1.7 {:dependencies [[org.clojure/clojure "1.7.0"]]}
              :1.8 {:dependencies [[org.clojure/clojure "1.8.0"]]}
-             :1.9 {:dependencies [[org.clojure/clojure "1.9.0"]]}}
+             :1.9 {:dependencies [[org.clojure/clojure "1.9.0"]]}
+             :1.10 {:dependencies [[org.clojure/clojure "1.10.1"]]}
+             :master {:dependencies [[org.clojure/clojure "1.11.0-master-SNAPSHOT"]]}}
   :cljsbuild {:builds {:test {:source-paths ["src/main/cljs"
                                              "src/test/cljs"]
                               :compiler {:optimizations :advanced
