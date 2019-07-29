@@ -9,15 +9,18 @@
   :source-paths ["src/main/clojure"
                  "src/main/cljs"]
   :test-paths ["src/test/clojure"]
-  :jvm-opts ^:replace ["-XX:+UseG1GC"]
+  :jvm-opts ^:replace ["-XX:+UseG1GC"
+                       "-XX:-OmitStackTraceInFastThrow"]
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.7.0"]]
                    :plugins [[lein-cljsbuild "1.1.7"]]}
+             :socket {:jvm-opts ["-Dclojure.server.repl={:port 50505 :accept clojure.core.server/repl}"]}
              ;; Using collections-check requires these minimum
              ;; versions of Clojure and test.check
              :check {:dependencies [[collection-check "0.1.7"]
                                     [org.clojure/clojure "1.7.0"]
                                     [org.clojure/test.check "0.9.0"]]
                      :test-paths ["src/test_local/clojure"]}
+             :test-failing {:test-paths ["src/test_failing/clojure"]}
              :cljs {:dependencies [[org.clojure/clojure "1.10.0"]
                                    [org.clojure/clojurescript "1.10.238"]]}
              :1.6 {:dependencies [[org.clojure/clojure "1.6.0"]]}
