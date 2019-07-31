@@ -6,6 +6,14 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true) ;; :warn-on-boxed
 
+(defn dbgln [& args]
+  #_(apply println args))
+
+(defn int-array? [x]
+  (and (not (nil? x))
+       (.isArray (class x))
+       (= Integer/TYPE (. (class x) getComponentType))))
+
 ;;; array managers
 
 (defmacro mk-am [t]

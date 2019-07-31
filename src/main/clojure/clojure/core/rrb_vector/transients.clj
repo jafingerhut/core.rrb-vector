@@ -1,5 +1,6 @@
 (ns clojure.core.rrb-vector.transients
-  (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range]])
+  (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range dbgln
+                                                   int-array?]])
   (:import (clojure.core.rrb_vector.nodes NodeManager)
            (clojure.core ArrayManager)
            (java.util.concurrent.atomic AtomicReference)))
@@ -85,8 +86,11 @@
             (.node nm root-edit new-arr)))))
 
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
+      (dbgln "transient-helper.pushTail shift=" shift "cnt=" cnt)
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
-        (if (.regular nm ret)
+        (if (let [tmp (.regular nm ret)]
+              (dbgln "transient-helper.pushTail regular=" tmp)
+              tmp)
           (do (loop [n ret shift shift]
                 (let [arr    (.array nm n)
                       subidx (bit-and (bit-shift-right (dec cnt) shift) 0x1f)]
@@ -131,11 +135,17 @@
                                       root-edit
                                       child
                                       tail-node))))]
+            (dbgln "transient-helper.pushTail cret=" cret)
             (if cret
               (do (aset ^objects arr li cret)
                   (aset rngs li (unchecked-add-int (aget rngs li) 32))
                   ret)
-              (do (aset ^objects arr (inc li)
+              (do (when (== li 31)
+                    (println (str "ERROR: Setting arr 32 to ret value of"
+                                  " (.newPath ...) cnt=" cnt
+                                  " shift=" shift " li=" li
+                                  " rngs=" (seq rngs))))
+                  (aset ^objects arr (inc li)
                         (.newPath this nm am
                                   (.array nm tail-node)
                                   root-edit

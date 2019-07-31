@@ -65,24 +65,44 @@
 ;; 2018-Dec-09 for this issue:
 ;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-20
 
+(def my-vector-bad-rets (atom []))
+(def my-catvec-bad-rets (atom []))
+(def my-subvec-bad-rets (atom []))
+
 (defn my-vector [vectype & more]
   (case vectype
-    :rrb (apply fv/vector more)
+    :rrb (let [ret (apply fv/vector more)]
+           (when-let [err (seq (dv/ranges-not-int-array ret))]
+             (println "ERROR: ret from my-vector has non int-array ranges")
+             (swap! my-vector-bad-rets conj ret))
+           ret)
     :core (apply clojure.core/vector more)))
 
-(defn catvec [vectype v1 v2]
+(defn my-catvec [vectype v1 v2]
   (case vectype
-    :rrb (fv/catvec v1 v2)
-    :core (into v1 v2)))
+    :rrb (let [ret (fv/catvec v1 v2)]
+           (when-let [err (seq (dv/ranges-not-int-array ret))]
+             (println "ERROR: ret from my-catvec has non int-array ranges")
+             (swap! my-catvec-bad-rets conj ret))
+           ret)
+    :core (clojure.core/into v1 v2)))
 
 (defn my-subvec
   ([vectype v x]
    (case vectype
-     :rrb (fv/subvec v x)
+     :rrb (let [ret (fv/subvec v x)]
+            (when-let [err (seq (dv/ranges-not-int-array ret))]
+              (println "ERROR: ret from my-subvec has non int-array ranges")
+              (swap! my-subvec-bad-rets conj ret))
+            ret)
      :core (clojure.core/subvec v x)))
   ([vectype v x y]
    (case vectype
-     :rrb (fv/subvec v x y)
+     :rrb (let [ret (fv/subvec v x y)]
+            (when-let [err (seq (dv/ranges-not-int-array ret))]
+              (println "ERROR: ret from my-subvec has non int-array ranges")
+              (swap! my-subvec-bad-rets conj ret))
+            ret)
      :core (clojure.core/subvec v x y))))
 
 (defn swap
@@ -92,7 +112,7 @@
   those contents.  Returns a vector with elements in the original
   order if 'split-ndx' is 0."
   [vectype marbles split-ndx]
-  (catvec vectype
+  (my-catvec vectype
     (my-subvec vectype marbles split-ndx)
     (my-subvec vectype marbles 0 split-ndx)))
 
@@ -110,7 +130,10 @@
 (defn place-marble
   [vectype marbles marble]
   (let [marbles (rotl vectype marbles 2)]
-    [(catvec vectype (my-vector vectype marble) marbles) 0]))
+    (when-let [err (seq (dv/ranges-not-int-array marbles))]
+      (println "ERROR: ret from rotl has non int-array ranges")
+      (swap! my-catvec-bad-rets conj marbles))
+    [(my-catvec vectype (my-vector vectype marble) marbles) 0]))
 
 (defn remove-marble
   [vectype marbles marble]
@@ -138,14 +161,14 @@
     (let [[marbles round-score] (play-round vectype marbles round)
           scores (add-score scores player round-score)]
       (if (> round rounds)
-        ret
+        (conj ret {:round round :marbles marbles})
         (recur marbles
                (inc round)
                (if (= player players) 1 (inc player))
                scores
                (conj ret {:round round :marbles marbles}))))))
 
-(deftest many-subvec-an-catvec-leads-to-exception
+(deftest many-subvec-and-catvec-leads-to-exception
   ;; This one passes
   (is (= (play :core 10 1128) (play :rrb 10 1128)))
   ;; This ends up with (play :rrb 10 1129) throwing an exception

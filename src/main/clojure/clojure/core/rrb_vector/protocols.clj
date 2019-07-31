@@ -5,3 +5,8 @@
 
 (defprotocol PSliceableVector
   (slicev [v start end]))
+
+(defprotocol PTransientDebugAccess
+  (debugGetRoot [v])
+  (debugGetShift [v])
+  (debugGetTail [v]))

@@ -2,13 +2,15 @@
   (:refer-clojure :exclude [assert ->VecSeq])
   (:require [clojure.core.rrb-vector.protocols
              :refer [PSliceableVector slicev
-                     PSpliceableVector splicev]]
+                     PSpliceableVector splicev
+                     PTransientDebugAccess]]
             [clojure.core.rrb-vector.nodes
              :refer [ranges overflow? last-range regular-ranges
                      first-child last-child remove-leftmost-child
                      replace-leftmost-child replace-rightmost-child
                      fold-tail new-path index-of-nil
-                     object-am object-nm primitive-nm]]
+                     object-am object-nm primitive-nm
+                     dbgln int-array?]]
             [clojure.core.rrb-vector.transients :refer [transient-helper]]
             [clojure.core.rrb-vector.fork-join :as fj]
             [clojure.core.protocols :refer [IKVReduce]]
@@ -362,6 +364,7 @@
         (.node nm nil new-arr)))))
 
 (defn slice-left [^NodeManager nm ^ArrayManager am node shift start end]
+  (dbgln "slice-left shift=" shift "start=" start "end=" end)
   (let [shift (int shift)
         start (int start)
         end   (int end)]
@@ -371,6 +374,8 @@
             new-len (unchecked-subtract-int (.alength am arr) start)
             new-arr (.array am new-len)]
         (System/arraycopy arr start new-arr 0 new-len)
+        ;; jafingerhut TBD: This returns a node with edit=nil.  Is
+        ;; that bad?  If so, what should be used instead?
         (.node nm nil new-arr))
       (let [regular? (.regular nm node)
             arr      (.array nm node)
@@ -814,7 +819,10 @@
       (throw (IndexOutOfBoundsException.))))
 
   (pushTail [this shift cnt node tail-node]
-    (if (.regular nm node)
+    (dbgln "Vector.pushTail shift=" shift "cnt=" cnt)
+    (if (let [tmp (.regular nm node)]
+          (dbgln "Vector.pushTail regular=" tmp)
+          tmp)
       (let [arr (aclone ^objects (.array nm node))
             ret (.node nm (.edit nm node) arr)]
         (loop [node ret shift (int shift)]
@@ -852,6 +860,7 @@
                                   (unchecked-inc-int ccnt)
                                   (aget ^objects arr li)
                                   tail-node))))]
+        (dbgln "Vector.pushTail cret=" cret)
         (if cret
           (do (aset ^objects arr li cret)
               (aset rngs li (unchecked-add-int (aget rngs li) (int 32)))
@@ -1051,6 +1060,7 @@
   
   PSliceableVector
   (slicev [this start end]
+    (dbgln "Vector.slicev start=" start "end=" end)
     (let [start   (int start)
           end     (int end)
           new-cnt (unchecked-subtract-int end start)]
@@ -1074,6 +1084,7 @@
                                 new-cnt)
               (Vector. nm am new-cnt (int 5) (.empty nm) new-tail _meta -1 -1))
             (let [tail-cut? (> end tail-off)
+                  _ (dbgln "Vector.slicev tail-cut?=" tail-cut?)
                   new-root  (if tail-cut?
                               root
                               (slice-right nm am root shift end))
@@ -1283,7 +1294,15 @@
       (.alength am arr)
       (if (.regular nm node)
         (index-of-nil arr)
-        (let [rngs (ranges nm node)]
+        (let [
+;;              _ (dbgln "slot-count "
+;;                       ;;"(type nm)=" (type nm)
+;;                       "(type node)=" (type node)
+;;                       "(type (aget (.array nm node) 32))="
+;;                       (type (aget (.array nm node) 32) )
+;;                       "types="
+;;                       (frequencies (map type (.array nm node))))
+              rngs (ranges nm node)]
           (aget rngs 32))))))
 
 (defn subtree-branch-count [^NodeManager nm ^ArrayManager am node shift]
@@ -1534,6 +1553,8 @@
         (pair (.node nm nil new-arr) nil)))))
 
 (defn splice-rrbts [^NodeManager nm ^ArrayManager am ^Vector v1 ^Vector v2]
+  (dbgln "splice-rrbts (count v1)=" (count v1)
+         "(count v2)=" (count v2))
   (cond
     (zero? (count v1)) v2
     (< (count v2) rrbt-concat-threshold) (into v1 v2)
@@ -1703,6 +1724,7 @@
   clojure.lang.ITransientCollection
   (conj [this val]
     (.ensureEditable transient-helper nm root)
+    (dbgln "Transient.conj val=" val "tidx=" tidx)
     (if (< tidx 32)
       (do (.aset am tail tidx val)
           (set! cnt  (unchecked-inc-int cnt))
@@ -1713,8 +1735,12 @@
         (.aset am new-tail 0 val)
         (set! tail new-tail)
         (set! tidx (int 1))
-        (if (overflow? nm root shift cnt)
-          (if (.regular nm root)
+        (if (let [tmp (overflow? nm root shift cnt)]
+              (dbgln "Transient.conj overflow?=" tmp)
+              tmp)
+          (if (let [tmp (.regular nm root)]
+                (dbgln "Transient.conj regular=" tmp)
+                tmp)
             (let [new-arr (object-array 32)]
               (doto new-arr
                 (aset 0 root)
@@ -1741,7 +1767,8 @@
               (set! shift (unchecked-add-int shift (int 5)))
               (set! cnt   (unchecked-inc-int cnt))
               this))
-          (let [new-root (.pushTail transient-helper nm am
+          (let [_ (dbgln "Transient.conj just before pushTail")
+                new-root (.pushTail transient-helper nm am
                                     shift cnt (.edit nm root) root tail-node)]
             (set! root new-root)
             (set! cnt  (unchecked-inc-int cnt))
@@ -1863,4 +1890,9 @@
                 (recur (int i)
                        (aget ^objects (.array nm node) j)
                        (unchecked-subtract-int shift (int 5)))))))) 
-      (throw (IndexOutOfBoundsException.)))))
+      (throw (IndexOutOfBoundsException.))))
+
+  PTransientDebugAccess
+  (debugGetRoot [_] root)
+  (debugGetShift [_] shift)
+  (debugGetTail [_] tail))
