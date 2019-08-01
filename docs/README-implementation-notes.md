@@ -77,6 +77,39 @@ Zach Tellman's Bifurcan library of impure functional data structures
 
 # Some notes on details of core.rrb-vector implementation
 
+Clojure/Java source files in directory src/main/clojure/clojure/core:
+
+* rrb_vector.clj
+* rrb_vector/protocols.clj
+* rrb_vector/interop.clj
+* rrb_vector/rrbt.clj
+* rrb_vector/nodes.clj
+* rrb_vector/fork_join.clj
+* rrb_vector/transients.clj
+* rrb_vector/debug.clj
+
+ClojureScript files in directory src/main/cljs/clojure/core:
+
+* rrb_vector.cljs
+* rrb_vector/debug.cljs
+* rrb_vector/interop.cljs
+* rrb_vector/transients.cljs
+* rrb_vector/protocols.cljs
+* rrb_vector/nodes.cljs
+* rrb_vector/macros.clj
+* rrb_vector/trees.cljs
+* rrb_vector/rrbt.cljs
+
+Test files:
+
+* src/test/clojure/clojure/core/rrb_vector_test.clj
+* src/test/cljs/clojure/core/rrb_vector_test.cljs
+* src/test_local/clojure/clojure/core/rrb_vector_check.clj
+
+clojure.core/pop! calls method .pop
+clojure.core/transient calls method .asTransient
+
+
 Call tree:
 
 Defined in namespace: clojure.core.rrb-vector.nodes
@@ -87,10 +120,8 @@ definline object
 (def empty-pv-node PersistentVector/EMPTY_NODE)
 (def empty-gvec-node clojure.core/EMPTY-NODE)
 (definterface NodeManager
-  ;; ...
-
   ;; TBD: What is method regular for?
-)
+  )
 (def object-nm
   (reify NodeManager
     ;; ...
@@ -117,8 +148,55 @@ definline object
   ;; .regular
   ;; ranges
   )
-
 (defn index-of-0 ^long [arr]
   ;; 
   )
+```
+
+Defined in namespace: clojure.core.rrb-vector.rrbt
+
+```
+defmacro assert
+defmacro dbg
+defmacro dbg-
+defn throw-unsupported
+defmacro compile-if
+defmacro caching-hash
+defn hash-gvec-seq
+definterface IVecImpl - 7 lines
+deftype VecSeq - 222 lines
+defprotocol AsRRBT - 2 lines
+defn slice-right - 62 lines
+defn slice-left - 98 lines
+splice-rrbts - 1 line
+deftype Vector - 770 lines 491-1260
+   pop method - 37 lines 689-725
+   popTail method - 88 lines lines 903-990
+extend-protocol AsRRBT - 23 lines
+defn shift-from-to - 23 lines
+defn pair - 4 lines
+defn slot-count - 8 lines
+defn subtree-branch-count - 17 lines
+defn leaf-seq - 2 lines
+defn rebalance-leaves - 58 lines
+defn child-seq - 14 lines
+defn rebalance - 84 lines
+defn zippath - 35 lines
+defn squash-nodes - 30 lines
+defn splice-rrbts - 66 lines
+defn array-copy - 9 lines
+deftype Transient - 254 lines 1648-1901
+   pop method - 55 lines line 1808-1862
+
+     most complex case that handles a tail that had 1 element, and
+       pop! leaves it with 0, so a new tail is created -- 34 lines
+
+```
+
+Defined in namespace: clojure.core.rrb-vector.transients
+
+```
+definterface ITransientHelper - 39 lines 15-53
+def transient-helper - reify TransientHelper 240 lines 55-294
+  popTail - 84 lines 154-237
 ```
