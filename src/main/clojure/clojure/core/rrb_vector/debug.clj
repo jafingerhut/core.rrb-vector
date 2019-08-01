@@ -256,12 +256,35 @@
                  (not (internal-node-type? (:node node-info)))))
           node-infos))
 
+;; TBD: The definition of nth in deftype Vector seems to imply that
+;; every descendant of a 'regular' node must also be regular.  That
+;; would be a straightforward sanity check to make, to return an error
+;; if a non-regular node is found with a regular ancestor in the tree.
+
 (defn basic-node-errors [v]
-  (let [[_ extract-shift _ ^NodeManager nm] (accessors-for v)
+  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
+            (if subvector? vector-inside v))
+        [_ extract-shift _ ^NodeManager nm] (accessors-for v)
         shift (extract-shift v)
         nodes (all-vector-tree-nodes v)
         by-kind (group-by :kind nodes)
-        leaf-depths (set (map :depth (:leaf by-kind)))]
+        leaf-depths (set (map :depth (:leaf by-kind)))
+        expected-leaf-depth (+ (/ shift 5) 2)
+        max-internal-node-depth (->> (:internal by-kind)
+                                     (map :depth)
+                                     (apply max))
+        ;; Be a little loose in checking here.  If we want to narrow
+        ;; it down to one expected answer, we would need to look at
+        ;; the tail to see how many elements it has, then use the
+        ;; different between (count v) and that to determine how many
+        ;; nodes are in the rest of the tree, whether it is 0 or
+        ;; non-0.
+        expected-internal-max-depths
+        (cond
+          (= (count v) 0) #{(- expected-leaf-depth 2)}
+          (> (count v) 33) #{(dec expected-leaf-depth)}
+          :else #{(dec expected-leaf-depth)
+                  (- expected-leaf-depth 2)})]
     (cond
       (not= (mod shift 5) 0)
       {:error true
@@ -276,6 +299,24 @@
        :description (str "There are leaf nodes at multiple different depths: "
                          leaf-depths)
        :data leaf-depths}
+
+      (and (= (count leaf-depths) 1)
+           (not= (first leaf-depths) expected-leaf-depth))
+      {:error true
+       :description (str "Expecting all leaves to be at depth " expected-leaf-depth
+                         " because root has shift=" shift
+                         " but found leaves at depth " (first leaf-depths))
+       :data leaf-depths}
+
+      (not (contains? expected-internal-max-depths max-internal-node-depth))
+      {:error true
+       :description (str "Expecting there to be some internal nodes at one of"
+                         " these depths: "
+                         expected-internal-max-depths
+                         " because count=" (count v)
+                         " and root has shift=" shift
+                         " but max depth among all internal nodes found was "
+                         max-internal-node-depth)}
 
       (seq (leaves-with-internal-node-type nodes))
       {:error true

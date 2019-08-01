@@ -32,7 +32,15 @@
     (println "ERROR:" err-desc-str "ret has non int-array ranges")
     (swap! extra-check-failures conj {:err-desc-str err-desc-str
                                       :ret ret
-                                      :args args})))
+                                      :args args}))
+  (let [i (dv/basic-node-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! extra-check-failures conj {:err-desc-str err-desc-str
+                                        :ret ret
+                                        :args args
+                                        :basic-node-errors i}))))
 
 
 (deftest npe-for-1025-then-pop!
