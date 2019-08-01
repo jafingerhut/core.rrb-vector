@@ -140,6 +140,16 @@
               (do (aset ^objects arr li cret)
                   (aset rngs li (unchecked-add-int (aget rngs li) 32))
                   ret)
+              ;; See the code in namespace
+              ;; clojure.core.rrb-failing-tests, deftest
+              ;; many-subvec-and-catvec-leads-to-exception, for a way
+              ;; to reproduce the condition that leads to the error
+              ;; message below, repeatably.  Shortly after the error
+              ;; message is printed, if you do anything that does a
+              ;; seq over the resulting data structure, or probably
+              ;; many other operations, it throws an exception because
+              ;; the place where the code expects to find a Java array
+              ;; of ints, it instead finds a NodeVec object.
               (do (when (== li 31)
                     (println (str "ERROR: Setting arr 32 to ret value of"
                                   " (.newPath ...) cnt=" cnt

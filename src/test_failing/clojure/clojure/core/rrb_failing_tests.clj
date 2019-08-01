@@ -18,92 +18,85 @@
 ;;(def expect-failures false)
 
 
+(def extra-check-failures (atom []))
+
+(defn wrap-fn-with-ret-checks [orig-fn err-desc-str ret-check-fn]
+  (fn [& args]
+    (let [ret (apply orig-fn args)]
+      (apply ret-check-fn err-desc-str ret args)
+      ret)))
+
+(defn vector-ret-checks1 [err-desc-str ret & args]
+  ;;(println "checking ret val from" err-desc-str)
+  (when-let [err (seq (dv/ranges-not-int-array ret))]
+    (println "ERROR:" err-desc-str "ret has non int-array ranges")
+    (swap! extra-check-failures conj {:err-desc-str err-desc-str
+                                      :ret ret
+                                      :args args})))
+
 
 (deftest npe-for-1025-then-pop!
-  (let [bfactor-squared (* 32 32)
-        boundary 54
-        v1 (-> (fv/vector)
-               (into (range boundary))
-               (into (range boundary (inc bfactor-squared))))
-        v2 (-> (fv/vector)
-               (into (range bfactor-squared))
-               (transient)
-               (pop!)
-               (persistent!))
-        v3 (-> (fv/vector)
-               (into (range boundary))
-               (into (range boundary (inc bfactor-squared)))
-               (transient)
-               (pop!)
-               (persistent!))
-        v4 (-> (fv/vector)
-               (into (range (inc bfactor-squared)))
-               (transient)
-               (pop!)
-               (persistent!))]
-    ;; This test passes
-    (is (= (seq v1) (range (inc bfactor-squared))))
-    
-    ;; This also passes
-    (is (= (seq v2) (range (dec bfactor-squared))))
-    
-    ;; This fails with NullPointerException while traversing the seq
-    (if expect-failures
-      (is (thrown? NullPointerException
-                   (= (seq v3) (range (inc bfactor-squared)))))
-      (is (= (seq v3) (range (inc bfactor-squared)))))
-    
-    ;; This one causes a NullPointerException while traversing the seq
-    (if expect-failures
-      (is (thrown? NullPointerException
-                   (= (seq v4) (range (inc bfactor-squared)))))
-      (is (= (seq v4) (range (inc bfactor-squared)))))))
-
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [vector (wrap-fn-with-ret-checks
+                          fv/vector "clojure.core.rrb-vector/vector"
+                          extra-checks)
+                  into (wrap-fn-with-ret-checks
+                        clojure.core/into "clojure.core/into"
+                        extra-checks)
+                  transient (wrap-fn-with-ret-checks
+                             clojure.core/transient "clojure.core/transient"
+                             extra-checks)
+                  pop! (wrap-fn-with-ret-checks
+                        clojure.core/pop! "clojure.core/pop!"
+                        extra-checks)
+                  persistent! (wrap-fn-with-ret-checks
+                               clojure.core/persistent! "clojure.core/persistent!"
+                               extra-checks)]
+      (let [bfactor-squared (* 32 32)
+            boundary 54
+            v1 (-> (vector)
+                   (into (range boundary))
+                   (into (range boundary (inc bfactor-squared))))
+            v2 (-> (vector)
+                   (into (range bfactor-squared))
+                   (transient)
+                   (pop!)
+                   (persistent!))
+            v3 (-> (vector)
+                   (into (range boundary))
+                   (into (range boundary (inc bfactor-squared)))
+                   (transient)
+                   (pop!)
+                   (persistent!))
+            v4 (-> (vector)
+                   (into (range (inc bfactor-squared)))
+                   (transient)
+                   (pop!)
+                   (persistent!))]
+        ;; This test passes
+        (is (= (seq v1) (range (inc bfactor-squared))))
+        ;; This also passes
+        (is (= (seq v2) (range (dec bfactor-squared))))
+        ;; This fails with NullPointerException while traversing the seq
+        (if expect-failures
+          (is (thrown? NullPointerException
+                       (= (seq v3) (range (inc bfactor-squared)))))
+          (is (= (seq v3) (range (inc bfactor-squared)))))
+        ;; This one causes a NullPointerException while traversing the seq
+        (if expect-failures
+          (is (thrown? NullPointerException
+                       (= (seq v4) (range (inc bfactor-squared)))))
+          (is (= (seq v4) (range (inc bfactor-squared)))))))))
 
 
 ;; This problem reproduction code is from a comment by Mike Fikes on
 ;; 2018-Dec-09 for this issue:
 ;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-20
 
-(def my-vector-bad-rets (atom []))
-(def my-catvec-bad-rets (atom []))
-(def my-subvec-bad-rets (atom []))
+;; icatvec is intended to be first rebound using with-redefs before
+;; calling any of the functions below.
 
-(defn my-vector [vectype & more]
-  (case vectype
-    :rrb (let [ret (apply fv/vector more)]
-           (when-let [err (seq (dv/ranges-not-int-array ret))]
-             (println "ERROR: ret from my-vector has non int-array ranges")
-             (swap! my-vector-bad-rets conj ret))
-           ret)
-    :core (apply clojure.core/vector more)))
-
-(defn my-catvec [vectype v1 v2]
-  (case vectype
-    :rrb (let [ret (fv/catvec v1 v2)]
-           (when-let [err (seq (dv/ranges-not-int-array ret))]
-             (println "ERROR: ret from my-catvec has non int-array ranges")
-             (swap! my-catvec-bad-rets conj ret))
-           ret)
-    :core (clojure.core/into v1 v2)))
-
-(defn my-subvec
-  ([vectype v x]
-   (case vectype
-     :rrb (let [ret (fv/subvec v x)]
-            (when-let [err (seq (dv/ranges-not-int-array ret))]
-              (println "ERROR: ret from my-subvec has non int-array ranges")
-              (swap! my-subvec-bad-rets conj ret))
-            ret)
-     :core (clojure.core/subvec v x)))
-  ([vectype v x y]
-   (case vectype
-     :rrb (let [ret (fv/subvec v x y)]
-            (when-let [err (seq (dv/ranges-not-int-array ret))]
-              (println "ERROR: ret from my-subvec has non int-array ranges")
-              (swap! my-subvec-bad-rets conj ret))
-            ret)
-     :core (clojure.core/subvec v x y))))
+(def catvec nil)
 
 (defn swap
   "If there are at least 'split-ndx' elements in the vector 'marbles',
@@ -111,54 +104,48 @@
   the remaining ones to the beginning.  Returns a new vector with
   those contents.  Returns a vector with elements in the original
   order if 'split-ndx' is 0."
-  [vectype marbles split-ndx]
-  (my-catvec vectype
-    (my-subvec vectype marbles split-ndx)
-    (my-subvec vectype marbles 0 split-ndx)))
+  [marbles split-ndx]
+  (catvec
+    (subvec marbles split-ndx)
+    (subvec marbles 0 split-ndx)))
 
 (defn rotl
   "Throws an exception if the 'marbles' vector is empty.  If
   non-empty, moves the first (mod n (count marbles)) elements to the
   end using swap."
-  [vectype marbles n]
-  (swap vectype marbles (mod n (count marbles))))
+  [marbles n]
+  (swap marbles (mod n (count marbles))))
 
-(defn rotr
-  [vectype marbles n]
-  (swap vectype marbles (mod (- (count marbles) n) (count marbles))))
+(defn rotr [marbles n]
+  (swap marbles (mod (- (count marbles) n) (count marbles))))
 
 (defn place-marble
-  [vectype marbles marble]
-  (let [marbles (rotl vectype marbles 2)]
-    (when-let [err (seq (dv/ranges-not-int-array marbles))]
-      (println "ERROR: ret from rotl has non int-array ranges")
-      (swap! my-catvec-bad-rets conj marbles))
-    [(my-catvec vectype (my-vector vectype marble) marbles) 0]))
+  [marbles marble]
+  (let [marbles (rotl marbles 2)]
+    [(catvec (vector marble) marbles) 0]))
 
-(defn remove-marble
-  [vectype marbles marble]
-  (let [marbles (rotr vectype marbles 7)
+(defn remove-marble [marbles marble]
+  (let [marbles (rotr marbles 7)
         first-marble (nth marbles 0)]
-    [(my-subvec vectype marbles 1) (+ marble first-marble)]))
+    [(subvec marbles 1) (+ marble first-marble)]))
 
-(defn play-round
-  [vectype marbles round]
+(defn play-round [marbles round]
   (if (zero? (mod round 23))
-    (remove-marble vectype marbles round)
-    (place-marble vectype marbles round)))
+    (remove-marble marbles round)
+    (place-marble marbles round)))
 
 (defn add-score [scores player round-score]
   (if (zero? round-score)
     scores
     (assoc scores player (+ (get scores player 0) round-score))))
 
-(defn play [vectype players rounds]
-  (loop [marbles (my-vector vectype 0)
+(defn play [players rounds]
+  (loop [marbles (vector 0)
          round   1
          player  1
          scores  {}
          ret     []]
-    (let [[marbles round-score] (play-round vectype marbles round)
+    (let [[marbles round-score] (play-round marbles round)
           scores (add-score scores player round-score)]
       (if (> round rounds)
         (conj ret {:round round :marbles marbles})
@@ -168,12 +155,41 @@
                scores
                (conj ret {:round round :marbles marbles}))))))
 
+(defn play-core-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [catvec (wrap-fn-with-ret-checks
+                          clojure.core/into "clojure.core/into"
+                          extra-checks)
+                  subvec (wrap-fn-with-ret-checks
+                          clojure.core/subvec "clojure.core/subvec"
+                          extra-checks)
+                  vector (wrap-fn-with-ret-checks
+                          clojure.core/vector "clojure.core/vector"
+                          extra-checks)]
+      (apply play args))))
+
+(defn play-rrbv-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [catvec (wrap-fn-with-ret-checks
+                          fv/catvec "clojure.core.rrb-vector/catvec"
+                          extra-checks)
+                  subvec (wrap-fn-with-ret-checks
+                          fv/subvec "clojure.core.rrb-vector/subvec"
+                          extra-checks)
+                  vector (wrap-fn-with-ret-checks
+                          fv/vector "clojure.core.rrb-vector/vector"
+                          extra-checks)]
+      (apply play args))))
+
 (deftest many-subvec-and-catvec-leads-to-exception
   ;; This one passes
-  (is (= (play :core 10 1128) (play :rrb 10 1128)))
+  (is (= (play-core-plus-checks 10 1128)
+         (play-rrbv-plus-checks 10 1128)))
   ;; This ends up with (play :rrb 10 1129) throwing an exception
   (if expect-failures
     (is (thrown-with-msg? ClassCastException
                           #"clojure.lang.PersistentVector\$Node cannot be cast to \[I"
-                          (= (play :core 10 1129) (play :rrb 10 1129))))
-    (is (= (play :core 10 1129) (play :rrb 10 1129)))))
+                          (= (play-core-plus-checks 10 1129)
+                             (play-rrbv-plus-checks 10 1129))))
+    (is (= (play-core-plus-checks 10 1129)
+           (play-rrbv-plus-checks 10 1129)))))
