@@ -5,6 +5,7 @@
             [clojure.core.rrb-vector :as fv])
   (:import (clojure.lang PersistentVector PersistentVector$TransientVector
                          PersistentVector$Node APersistentVector$SubVector)
+           (java.util.concurrent.atomic AtomicReference)
            (clojure.core Vec VecNode)
            (clojure.core.rrb_vector.rrbt Vector Transient)
            (clojure.core.rrb_vector.nodes NodeManager)))
@@ -24,9 +25,17 @@
 (defn internal-node-type? [obj]
   (contains? #{PersistentVector$Node VecNode} (class obj)))
 
+(defn persistent-vector-type? [obj]
+  (contains? #{PersistentVector Vec Vector}
+             (class obj)))
+
+(defn transient-vector-type? [obj]
+  (contains? #{PersistentVector$TransientVector Transient}
+             (class obj)))
+
 (defn vector-type? [obj]
-  (contains? #{PersistentVector PersistentVector$TransientVector
-               Vec Vector Transient}
+  (contains? #{PersistentVector Vec Vector
+               PersistentVector$TransientVector Transient}
              (class obj)))
 
 (defn subvector? [v]
@@ -355,3 +364,90 @@
 
 (defn ranges-not-int-array [x]
   (seq (remove int-array? (objects-in-slot-32-of-obj-arrays x))))
+
+(defn atomicref? [x]
+  (instance? AtomicReference x))
+
+(defn thread? [x]
+  (instance? java.lang.Thread x))
+
+(defn non-identical-edit-nodes [v]
+  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
+            (if subvector? vector-inside v))
+        [extract-root extract-shift extract-tail ^NodeManager nm]
+        (accessors-for v)
+        node-maps (all-vector-tree-nodes v)
+        ihm (java.util.IdentityHashMap.)]
+    (doseq [i node-maps]
+      (when (= :internal (:kind i))
+        (.put ihm (.edit (:node i)) true)))
+    ihm))
+
+(defn edit-nodes-errors [v]
+  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
+            (if subvector? vector-inside v))
+        [extract-root extract-shift extract-tail ^NodeManager nm]
+        (accessors-for v)
+        klass (class v)
+        ihm (non-identical-edit-nodes v)
+        objs-maybe-some-nils (.keySet ihm)
+        ;; I do not believe that Clojure's built-in vector types can
+        ;; ever have edit fields equal to nil, but there are some
+        ;; cases where I have seen core.rrb-vector edit fields equal
+        ;; to nil.  As far as I can tell this seems harmless, as long
+        ;; as it is in a persistent vector, not a transient one.
+        objs (remove nil? objs-maybe-some-nils)
+        neither-nil-nor-atomicref (remove atomicref? objs)]
+    (if (seq neither-nil-nor-atomicref)
+      {:error true
+       :description (str "Found edit object with class "
+                         (class (first neither-nil-nor-atomicref))
+                         " - expecting nil or AtomicReference")
+       :data ihm
+       :not-atomic-refs neither-nil-nor-atomicref}
+      (let [refd-objs (map #(.get %) objs)
+            non-nils (remove nil? refd-objs)
+            not-threads (remove thread? non-nils)
+            root-edit (.edit (extract-root v))]
+        (cond
+          (seq not-threads) {:error true
+                             :description "Found edit AtomicReference ref'ing neither nil nor a Thread object"
+                             :data ihm}
+          (persistent-vector-type? v)
+          (if (= (count non-nils) 0)
+            {:error false}
+            {:error true
+             :description "Within a persistent (i.e. not transient) vector, found at least one edit AtomicReference object that ref's a Thread object.  Expected all of them to be nil."
+             :data ihm
+             :val1 (count non-nils)
+             :val2 non-nils})
+          
+          (transient-vector-type? v)
+          (cond
+            (not= (count non-nils) 1)
+            {:error true
+             :description (str "Within a transient vector, found " (count non-nils) " edit AtomicReference object(s) that ref's a Thread object.  Expected exactly 1.")
+             :data ihm
+             :val1 (count non-nils)
+             :val2 non-nils}
+            (not (atomicref? root-edit))
+            {:error true
+             :description (str "Within a transient vector, found root edit"
+                               " field that was ref'ing an object with class "
+                               (class root-edit)
+                               " - expected AtomicReference.")
+             :data root-edit}
+            (not (thread? (.get ^AtomicReference root-edit)))
+            (let [obj (.get ^AtomicReference root-edit)]
+              {:error true
+               :description (str "Within a transient vector, found root edit"
+                                 " field ref'ing an AtomicReference object,"
+                                 " but that in turn ref'd something with class "
+                                 (class obj)
+                                 " - expected java.lang.Thread.")
+               :data obj})
+            :else {:error false})
+
+          :else {:error true
+                 :description (str "Unknown class " klass " for object checked by edit-nodes-wrong-number-of-threads")
+                 :data v})))))

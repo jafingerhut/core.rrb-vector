@@ -40,7 +40,15 @@
       (swap! extra-check-failures conj {:err-desc-str err-desc-str
                                         :ret ret
                                         :args args
-                                        :basic-node-errors i}))))
+                                        :basic-node-errors i})))
+  (let [i (dv/edit-nodes-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! extra-check-failures conj {:err-desc-str err-desc-str
+                                        :ret ret
+                                        :args args
+                                        :edit-nodes-errors i}))))
 
 
 (deftest npe-for-1025-then-pop!
