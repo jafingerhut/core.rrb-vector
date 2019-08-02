@@ -314,3 +314,48 @@
     (is (every? integer? (puzzle-b-rrbv-plus-checks 978)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This code was copied from the issue:
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-13
+
+(defn assoc-in-bytevec [n i]
+  (let [coll (into (vector-of :byte) (repeat n 0))]
+    (assoc coll i 1)))
+
+(defn assoc-in-bytevec-core-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [vector-of (wrap-fn-with-ret-checks
+                          clojure.core/vector-of "clojure.core/vector-of"
+                          extra-checks)]
+      (apply assoc-in-bytevec args))))
+
+(defn assoc-in-bytevec-rrbv-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [vector-of (wrap-fn-with-ret-checks
+                          clojure.core.rrb-vector/vector-of "clojure.core.rrb-vector/vector-of"
+                          extra-checks)]
+      (apply assoc-in-bytevec args))))
+
+(deftest crrbv-13-tests
+  ;; some cases work
+  (doseq [args [[10 5]
+                [32 0]
+                [32 32]
+                [64 32]
+                [64 64]]]
+    (is (= (apply assoc-in-bytevec-core-plus-checks args)
+           (apply assoc-in-bytevec-rrbv-plus-checks args))))
+  (doseq [args [[64 0]
+                [64 1]
+                [64 31]]]
+    (if expect-failures
+      (is (thrown-with-msg?
+           ClassCastException
+           ;;#"\[B cannot be cast to \[Ljava\.lang\.Object;"
+           #".B cannot be cast to .Ljava.lang.Object;"
+           (= (apply assoc-in-bytevec-core-plus-checks args)
+              (apply assoc-in-bytevec-rrbv-plus-checks args)))
+          (str "args=" args))
+      (is (= (apply assoc-in-bytevec-core-plus-checks args)
+             (apply assoc-in-bytevec-rrbv-plus-checks args))
+          (str "args=" args)))))
