@@ -201,3 +201,116 @@
                              (play-rrbv-plus-checks 10 1129))))
     (is (= (play-core-plus-checks 10 1129)
            (play-rrbv-plus-checks 10 1129)))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This code was copied from
+;; https://github.com/mattiasw2/adventofcode1/blob/master/src/adventofcode1/nineteen_b.clj
+
+;; mentioned in issue
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-14
+
+(defn remove-at
+  "Remove cell at idx in arr."
+  [arr idx]
+  (catvec (subvec arr 0 idx) (subvec arr (inc idx))))
+
+
+(defn create-arr
+  "Return a vector with pair [1 idx] where idx starts at 1...size (incl)."
+  [size]
+  (vec (for [x (range 1 (inc size))]
+         [1 x])))
+
+(defn fv-rest
+  [arr]
+  (subvec arr 1))
+
+(defn calculate-opposite
+  "n is the number of elfs incl me. Im a at pos 0.
+   Return the opposite position."
+  [n]
+  (int (/ n 2)))
+
+(defn move
+  [elfs]
+  (let [lc (count elfs)]
+    (if (= 1 lc)
+      {:ok (first elfs)}
+      (let [current      (first elfs)
+            opposite-pos (calculate-opposite lc)
+            _ (assert (> opposite-pos 0))
+            _ (assert (< opposite-pos lc))
+            opposite-elf (nth elfs opposite-pos)
+            other2       (fv-rest (remove-at elfs opposite-pos))
+            current2     [(+ (first current) (first opposite-elf))
+                          (second current)]]
+        (catvec other2 [current2])))))
+
+
+(defn puzzle-b-sample
+  ([] (puzzle-b-sample (create-arr 5)))
+  ([elfs] (let [elfs2 (move elfs)]
+            (if (:ok elfs2)
+              (:ok elfs2)
+              ;;(println elfs2)
+              (recur elfs2)))))
+
+#_(s/fdef puzzle-b
+        :args (s/cat :n (s/and int? pos?))
+        :ret  (s/coll-of int?))
+
+(defn puzzle-b
+  ([] (puzzle-b 3014603))
+  ([n] (puzzle-b-sample (create-arr n))))
+
+(defn puzzle-b-core-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [catvec (wrap-fn-with-ret-checks
+                          clojure.core/into "clojure.core/into"
+                          extra-checks)
+                  subvec (wrap-fn-with-ret-checks
+                          clojure.core/subvec "clojure.core/subvec"
+                          extra-checks)
+                  vec    (wrap-fn-with-ret-checks
+                          clojure.core/vec "clojure.core/vec"
+                          extra-checks)]
+      (apply puzzle-b args))))
+
+(defn puzzle-b-rrbv-plus-checks [& args]
+  (let [extra-checks vector-ret-checks1]
+    (with-redefs [catvec (wrap-fn-with-ret-checks
+                          fv/catvec "clojure.core.rrb-vector/catvec"
+                          extra-checks)
+                  subvec (wrap-fn-with-ret-checks
+                          fv/subvec "clojure.core.rrb-vector/subvec"
+                          extra-checks)
+                  vec    (wrap-fn-with-ret-checks
+                          fv/vec "clojure.core.rrb-vector/vec"
+                          extra-checks)]
+      (apply puzzle-b args))))
+
+;;(puzzle-b-rrbv-plus-checks 977)
+;;(puzzle-b-rrbv-plus-checks 978)
+
+;;(def x (mapv (fn [i]
+;;               (let [ret (puzzle-b-rrbv-plus-checks i)]
+;;                 {:i i :ret ret :good? (every? integer? ret)}))
+;;             (range 1 700)))
+
+;;(every? :good? x)
+
+(deftest crrbv-14-tests
+  ;; This one passes
+  (is (= (puzzle-b-core-plus-checks 977)
+         (puzzle-b-rrbv-plus-checks 977)))
+  ;; (puzzle-b-rrbv-plus-checks 978) throws
+  ;; ArrayIndexOutOfBoundsException
+  (if expect-failures
+    (is (thrown-with-msg? ArrayIndexOutOfBoundsException
+                          #"^33$"
+                          (every? integer? (puzzle-b-rrbv-plus-checks 978))))
+    (is (every? integer? (puzzle-b-rrbv-plus-checks 978)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
