@@ -344,44 +344,58 @@
 ;; This code was copied from the issue:
 ;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-13
 
-(defn assoc-in-bytevec [n i]
-  (let [coll (into (vector-of :byte) (repeat n 0))]
-    (assoc coll i 1)))
+(defn assoc-in-bytevec [use-transient? n indices]
+  (let [coll (into (vector-of :byte) (range n))
+        coll2 (reduce (fn [coll i]
+                        (if use-transient?
+                          (assoc! coll i -1)
+                          (assoc coll i -1)))
+                      (if use-transient?
+                        (transient coll)
+                        coll)
+                      indices)]
+    (if use-transient?
+      (persistent! coll2)
+      coll2)))
 
 (defn assoc-in-bytevec-core-plus-checks [& args]
   (let [extra-checks vector-ret-checks1]
     (with-redefs [vector-of (wrap-fn-with-ret-checks
-                          clojure.core/vector-of "clojure.core/vector-of"
-                          extra-checks)]
+                             clojure.core/vector-of
+                             "clojure.core/vector-of"
+                             extra-checks)]
       (apply assoc-in-bytevec args))))
 
 (defn assoc-in-bytevec-rrbv-plus-checks [& args]
   (let [extra-checks vector-ret-checks1]
     (with-redefs [vector-of (wrap-fn-with-ret-checks
-                          clojure.core.rrb-vector/vector-of "clojure.core.rrb-vector/vector-of"
-                          extra-checks)]
+                             clojure.core.rrb-vector/vector-of
+                             "clojure.core.rrb-vector/vector-of"
+                             extra-checks)]
       (apply assoc-in-bytevec args))))
 
 (deftest crrbv-13-tests
-  ;; some cases work
-  (doseq [args [[10 5]
-                [32 0]
-                [32 32]
-                [64 32]
-                [64 64]]]
-    (is (= (apply assoc-in-bytevec-core-plus-checks args)
-           (apply assoc-in-bytevec-rrbv-plus-checks args))))
-  (doseq [args [[64 0]
-                [64 1]
-                [64 31]]]
-    (if expect-failures
-      (is (thrown-with-msg?
-           ClassCastException
-           ;;#"\[B cannot be cast to \[Ljava\.lang\.Object;"
-           #".B cannot be cast to .Ljava.lang.Object;"
-           (= (apply assoc-in-bytevec-core-plus-checks args)
-              (apply assoc-in-bytevec-rrbv-plus-checks args)))
-          (str "args=" args))
-      (is (= (apply assoc-in-bytevec-core-plus-checks args)
-             (apply assoc-in-bytevec-rrbv-plus-checks args))
-          (str "args=" args)))))
+  ;; Some cases work, probably the ones where the tail is being
+  ;; updated.
+  (doseq [use-transient? [false true]]
+    (doseq [args [[10 [5]]
+                  [32 [0]]
+                  [32 [32]]
+                  [64 [32]]
+                  [64 [64]]]]
+      (is (= (apply assoc-in-bytevec-core-plus-checks false args)
+             (apply assoc-in-bytevec-rrbv-plus-checks use-transient? args))
+          (str "args=" (cons use-transient? args))))
+    (doseq [args [[64 [0]]
+                  [64 [1]]
+                  [64 [31]]]]
+      (if expect-failures
+        (is (thrown-with-msg?
+             ClassCastException
+             #"\[B cannot be cast to \[Ljava\.lang\.Object;"
+             (= (apply assoc-in-bytevec-core-plus-checks false args)
+                (apply assoc-in-bytevec-rrbv-plus-checks use-transient? args)))
+            (str "args=" (cons use-transient? args)))
+        (is (= (apply assoc-in-bytevec-core-plus-checks false args)
+               (apply assoc-in-bytevec-rrbv-plus-checks use-transient? args))
+            (str "args=" (cons use-transient? args)))))))
