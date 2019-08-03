@@ -38,14 +38,16 @@
                PersistentVector$TransientVector Transient}
              (class obj)))
 
-(defn subvector? [v]
+(defn subvector-data [v]
   (if (instance? APersistentVector$SubVector v)
-    {:subvector? true
-     :vector-inside (.v v)
-     :start (.start v)
-     :end (.end v)}
-    {:subvector? false
-     :vector-inside v}))
+    {:orig-v v
+     :subvector? true
+     :v (.v v)
+     :subvec-start (.start v)
+     :subvec-end (.end v)}
+    {:orig-v v
+     :subvector? false
+     :v v}))
 
 (defn accessors-for [v]
   (condp identical? (class v)
@@ -71,19 +73,26 @@
                       #(.debugGetTail ^Transient %)
                       (.-nm ^Transient v)]))
 
-(defn dbg-vec [v]
-  (let [v (let [{:keys [subvector? vector-inside start end]} (subvector? v)]
-            (if subvector?
-              (do
-                (printf "SubVector from start %d to end %d of vector:\n"
-                        start end)
-                vector-inside)
-              v))
+(defn unwrap-subvec-accessors-for [v]
+  (let [{:keys [v subvector? subvec-start subvec-end] :as m} (subvector-data v)
         [extract-root extract-shift extract-tail ^NodeManager nm]
-        (accessors-for v)
+        (accessors-for v)]
+    (merge m
+           {:extract-root extract-root
+            :extract-shift extract-shift
+            :extract-tail extract-tail
+            :nm nm})))
+
+(defn dbg-vec [v]
+  (let [{:keys [v subvector? subvec-start subvec-end
+                extract-root extract-shift extract-tail ^NodeManager nm]}
+        (unwrap-subvec-accessors-for v)
         root  (extract-root v)
         shift (extract-shift v)
         tail  (extract-tail v)]
+    (when subvector?
+      (printf "SubVector from start %d to end %d of vector:\n"
+              subvec-start subvec-end))
     (letfn [(go [indent shift i node]
               (when node
                 (dotimes [_ indent]
@@ -199,8 +208,8 @@
 (defn count-nodes [& vs]
   (let [m (java.util.IdentityHashMap.)]
     (doseq [v vs]
-      (let [[extract-root extract-shift extract-tail ^NodeManager nm]
-            (accessors-for v)]
+      (let [{:keys [v extract-root extract-shift ^NodeManager nm]}
+            (unwrap-subvec-accessors-for v)]
         (letfn [(go [n shift]
                   (when n
                     (.put m n n)
@@ -221,8 +230,8 @@
 ;; definitely not in general.
 
 (defn all-vector-tree-nodes [v]
-  (let [[extract-root extract-shift extract-tail ^NodeManager nm]
-        (accessors-for v)
+  (let [{:keys [v extract-root extract-shift extract-tail ^NodeManager nm]}
+        (unwrap-subvec-accessors-for v)
         root  (extract-root v)
         shift (extract-shift v)
         tail  (extract-tail v)]
@@ -271,9 +280,7 @@
 ;; if a non-regular node is found with a regular ancestor in the tree.
 
 (defn basic-node-errors [v]
-  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
-            (if subvector? vector-inside v))
-        [_ extract-shift _ ^NodeManager nm] (accessors-for v)
+  (let [{:keys [v extract-shift]} (unwrap-subvec-accessors-for v)
         shift (extract-shift v)
         nodes (all-vector-tree-nodes v)
         by-kind (group-by :kind nodes)
@@ -349,10 +356,7 @@
   be a bug if that happens, and we should be able to detect it
   whenever it occurs."
   [v]
-  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
-            (if subvector? vector-inside v))
-        [extract-root extract-shift extract-tail ^NodeManager nm]
-        (accessors-for v)
+  (let [{:keys [v ^NodeManager nm]} (unwrap-subvec-accessors-for v)
         node-maps (all-vector-tree-nodes v)
         internal (filter #(= :internal (:kind %)) node-maps)]
     (keep (fn [node-info]
@@ -372,10 +376,7 @@
   (instance? java.lang.Thread x))
 
 (defn non-identical-edit-nodes [v]
-  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
-            (if subvector? vector-inside v))
-        [extract-root extract-shift extract-tail ^NodeManager nm]
-        (accessors-for v)
+  (let [{:keys [v]} (unwrap-subvec-accessors-for v)
         node-maps (all-vector-tree-nodes v)
         ihm (java.util.IdentityHashMap.)]
     (doseq [i node-maps]
@@ -384,10 +385,7 @@
     ihm))
 
 (defn edit-nodes-errors [v]
-  (let [v (let [{:keys [subvector? vector-inside]} (subvector? v)]
-            (if subvector? vector-inside v))
-        [extract-root extract-shift extract-tail ^NodeManager nm]
-        (accessors-for v)
+  (let [{:keys [v extract-root]} (unwrap-subvec-accessors-for v)
         klass (class v)
         ihm (non-identical-edit-nodes v)
         objs-maybe-some-nils (.keySet ihm)
