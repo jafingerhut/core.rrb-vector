@@ -51,58 +51,68 @@
                                         :edit-nodes-errors i}))))
 
 
-(deftest npe-for-1025-then-pop!
-  (let [extra-checks vector-ret-checks1]
-    (with-redefs [vector (wrap-fn-with-ret-checks
-                          fv/vector "clojure.core.rrb-vector/vector"
+(defn npe-for-1025-then-pop! []
+  (let [bfactor-squared (* 32 32)
+        boundary 54
+        v1 (-> (vector)
+               (into (range boundary))
+               (into (range boundary (inc bfactor-squared))))
+        v2 (-> (vector)
+               (into (range bfactor-squared))
+               (transient)
+               (pop!)
+               (persistent!))
+        v3 (-> (vector)
+               (into (range boundary))
+               (into (range boundary (inc bfactor-squared)))
+               (transient)
+               (pop!)
+               (persistent!))
+        v4 (-> (vector)
+               (into (range (inc bfactor-squared)))
+               (transient)
+               (pop!)
+               (persistent!))]
+    ;; This test passes
+    (is (= (seq v1) (range (inc bfactor-squared))))
+    ;; This also passes
+    (is (= (seq v2) (range (dec bfactor-squared))))
+    ;; This fails with NullPointerException while traversing the seq
+    (if expect-failures
+      (is (thrown? NullPointerException
+                   (= (seq v3) (range (inc bfactor-squared)))))
+      (is (= (seq v3) (range (inc bfactor-squared)))))
+    ;; This one causes a NullPointerException while traversing the seq
+    (if expect-failures
+      (is (thrown? NullPointerException
+                   (= (seq v4) (range (inc bfactor-squared)))))
+      (is (= (seq v4) (range (inc bfactor-squared)))))))
+
+(deftest npe-for-1025-then-pop!-tests
+  (doseq [kind [:object-array :long-array]]
+    (let [extra-checks vector-ret-checks1]
+      (with-redefs [vector (case kind
+                             :object-array
+                             (wrap-fn-with-ret-checks
+                              fv/vector "clojure.core.rrb-vector/vector"
+                              extra-checks)
+                             :long-array
+                             (wrap-fn-with-ret-checks
+                              #(fv/vector-of :long) "clojure.core.rrb-vector/vector-of :long"
+                              extra-checks))
+                    into (wrap-fn-with-ret-checks
+                          clojure.core/into "clojure.core/into"
                           extra-checks)
-                  into (wrap-fn-with-ret-checks
-                        clojure.core/into "clojure.core/into"
-                        extra-checks)
-                  transient (wrap-fn-with-ret-checks
-                             clojure.core/transient "clojure.core/transient"
-                             extra-checks)
-                  pop! (wrap-fn-with-ret-checks
-                        clojure.core/pop! "clojure.core/pop!"
-                        extra-checks)
-                  persistent! (wrap-fn-with-ret-checks
-                               clojure.core/persistent! "clojure.core/persistent!"
-                               extra-checks)]
-      (let [bfactor-squared (* 32 32)
-            boundary 54
-            v1 (-> (vector)
-                   (into (range boundary))
-                   (into (range boundary (inc bfactor-squared))))
-            v2 (-> (vector)
-                   (into (range bfactor-squared))
-                   (transient)
-                   (pop!)
-                   (persistent!))
-            v3 (-> (vector)
-                   (into (range boundary))
-                   (into (range boundary (inc bfactor-squared)))
-                   (transient)
-                   (pop!)
-                   (persistent!))
-            v4 (-> (vector)
-                   (into (range (inc bfactor-squared)))
-                   (transient)
-                   (pop!)
-                   (persistent!))]
-        ;; This test passes
-        (is (= (seq v1) (range (inc bfactor-squared))))
-        ;; This also passes
-        (is (= (seq v2) (range (dec bfactor-squared))))
-        ;; This fails with NullPointerException while traversing the seq
-        (if expect-failures
-          (is (thrown? NullPointerException
-                       (= (seq v3) (range (inc bfactor-squared)))))
-          (is (= (seq v3) (range (inc bfactor-squared)))))
-        ;; This one causes a NullPointerException while traversing the seq
-        (if expect-failures
-          (is (thrown? NullPointerException
-                       (= (seq v4) (range (inc bfactor-squared)))))
-          (is (= (seq v4) (range (inc bfactor-squared)))))))))
+                    transient (wrap-fn-with-ret-checks
+                               clojure.core/transient "clojure.core/transient"
+                               extra-checks)
+                    pop! (wrap-fn-with-ret-checks
+                          clojure.core/pop! "clojure.core/pop!"
+                          extra-checks)
+                    persistent! (wrap-fn-with-ret-checks
+                                 clojure.core/persistent! "clojure.core/persistent!"
+                                 extra-checks)]
+        (npe-for-1025-then-pop!)))))
 
 
 ;; This problem reproduction code is from a comment by Mike Fikes on
