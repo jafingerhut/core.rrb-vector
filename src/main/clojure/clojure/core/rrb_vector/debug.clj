@@ -6,6 +6,7 @@
   (:import (clojure.lang PersistentVector PersistentVector$TransientVector
                          PersistentVector$Node APersistentVector$SubVector)
            (java.util.concurrent.atomic AtomicReference)
+           (java.lang.reflect Field)
            (clojure.core Vec VecNode)
            (clojure.core.rrb_vector.rrbt Vector Transient)
            (clojure.core.rrb_vector.nodes NodeManager)))
@@ -14,12 +15,12 @@
 ;; PersistentVector$TransientVector are private, but note that this is
 ;; only intended for debug use.
 (def transient-core-vec (transient (vector)))
-(def transient-core-vec-class (class transient-core-vec))
-(def transient-core-root-field (.getDeclaredField transient-core-vec-class "root"))
+(def ^Class transient-core-vec-class (class transient-core-vec))
+(def ^Field transient-core-root-field (.getDeclaredField transient-core-vec-class "root"))
 (.setAccessible transient-core-root-field true)
-(def transient-core-shift-field (.getDeclaredField transient-core-vec-class "shift"))
+(def ^Field transient-core-shift-field (.getDeclaredField transient-core-vec-class "shift"))
 (.setAccessible transient-core-shift-field true)
-(def transient-core-tail-field (.getDeclaredField transient-core-vec-class "tail"))
+(def ^Field transient-core-tail-field (.getDeclaredField transient-core-vec-class "tail"))
 (.setAccessible transient-core-tail-field true)
 
 (defn internal-node-type? [obj]
@@ -40,11 +41,12 @@
 
 (defn subvector-data [v]
   (if (instance? APersistentVector$SubVector v)
-    {:orig-v v
-     :subvector? true
-     :v (.v v)
-     :subvec-start (.start v)
-     :subvec-end (.end v)}
+    (let [^APersistentVector$SubVector v v]
+      {:orig-v v
+       :subvector? true
+       :v (.v v)
+       :subvec-start (.start v)
+       :subvec-end (.end v)})
     {:orig-v v
      :subvector? false
      :v v}))
@@ -74,7 +76,7 @@
                       (.-nm ^Transient v)]))
 
 (defn unwrap-subvec-accessors-for [v]
-  (let [{:keys [v subvector? subvec-start subvec-end] :as m} (subvector-data v)
+  (let [{:keys [v] :as m} (subvector-data v)
         [extract-root extract-shift extract-tail ^NodeManager nm]
         (accessors-for v)]
     (merge m
@@ -233,25 +235,24 @@
   (let [{:keys [v extract-root extract-shift extract-tail ^NodeManager nm]}
         (unwrap-subvec-accessors-for v)
         root  (extract-root v)
-        shift (extract-shift v)
-        tail  (extract-tail v)]
-    (letfn [(go [depth shift i node]
+        shift (extract-shift v)]
+    (letfn [(go [depth shift node]
               (if node
                 (if (not= shift 0)
                   (cons
                    {:depth depth :shift shift :kind :internal :node node}
                    (apply concat
-                          (map-indexed (partial go (inc depth) (- shift 5))
-                                       (let [arr (.array nm node)]
-                                         (if (.regular nm node)
-                                           arr
-                                           (butlast arr))))))
+                          (map (partial go (inc depth) (- shift 5))
+                               (let [arr (.array nm node)]
+                                 (if (.regular nm node)
+                                   arr
+                                   (butlast arr))))))
                   (cons {:depth depth :shift shift :kind :internal :node node}
                         (map (fn [x]
                                {:depth (inc depth) :kind :leaf :value x})
                              (.array nm node))))))]
       (cons {:depth 0 :kind :base :shift shift :value v}
-            (go 1 shift 0 root)))))
+            (go 1 shift root)))))
 
 ;; All nodes that should be internal nodes are one of the internal
 ;; node types satisfying internal-node-type?  All nodes that are less
@@ -360,7 +361,7 @@
         node-maps (all-vector-tree-nodes v)
         internal (filter #(= :internal (:kind %)) node-maps)]
     (keep (fn [node-info]
-            (let [arr (.array nm (:node node-info))
+            (let [^objects arr (.array nm (:node node-info))
                   n (count arr)]
               (if (== n 33)
                 (aget arr 32))))
@@ -378,7 +379,7 @@
 (defn non-identical-edit-nodes [v]
   (let [{:keys [v]} (unwrap-subvec-accessors-for v)
         node-maps (all-vector-tree-nodes v)
-        ihm (java.util.IdentityHashMap.)]
+        ^java.util.IdentityHashMap ihm (java.util.IdentityHashMap.)]
     (doseq [i node-maps]
       (when (= :internal (:kind i))
         (.put ihm (.edit (:node i)) true)))
@@ -387,7 +388,7 @@
 (defn edit-nodes-errors [v]
   (let [{:keys [v extract-root]} (unwrap-subvec-accessors-for v)
         klass (class v)
-        ihm (non-identical-edit-nodes v)
+        ^java.util.IdentityHashMap ihm (non-identical-edit-nodes v)
         objs-maybe-some-nils (.keySet ihm)
         ;; I do not believe that Clojure's built-in vector types can
         ;; ever have edit fields equal to nil, but there are some
@@ -403,7 +404,7 @@
                          " - expecting nil or AtomicReference")
        :data ihm
        :not-atomic-refs neither-nil-nor-atomicref}
-      (let [refd-objs (map #(.get %) objs)
+      (let [refd-objs (map #(.get ^AtomicReference %) objs)
             non-nils (remove nil? refd-objs)
             not-threads (remove thread? non-nils)
             root-edit (.edit (extract-root v))]
@@ -458,3 +459,101 @@
                  :description (str "Unknown class " klass " for object checked"
                                    " by edit-nodes-wrong-number-of-threads")
                  :data v})))))
+
+(defn regular-node-errors [children]
+  ;; For regular nodes, there should be zero or more 'full' children,
+  ;; followed optionally by one 'partial' child, followed by nils.
+  (let [[full-children others] (split-with :full? children)
+        [partial-children others] (split-with #(and (not (:full %))
+                                                    (not= :nil (:kind %)))
+                                              others)
+        [nil-children others] (split-with #(= :nil (:kind %)) others)]
+    (cond
+      (not= 0 (count others))
+      {:error true, :kind :internal,
+       :description (str "Found internal regular node with "
+                         (count full-children) " full, "
+                         (count partial-children) " partial, "
+                         (count nil-children) " nil, "
+                         (count others) " 'other' children."
+                         " - expected 0 children after nils.")}
+      (> (count partial-children) 1)
+      {:error true, :kind :internal,
+       :description (str "Found internal regular node with "
+                         (count full-children) " full, "
+                         (count partial-children) " partial, "
+                         (count nil-children) " nil children"
+                         " - expected 0 or 1 partial.")}
+      :else
+      {:error false, :kind :internal,
+       :full? (= 32 (count full-children))
+       :count (reduce + (map #(or (:count %) 0) children))}
+      )))
+
+
+(defn non-regular-node-errors [node nm children]
+  (let [rng (ranges nm node)
+        [non-nil-children others] (split-with #(not= :nil (:kind %)) children)
+        [nil-children others] (split-with #(= :nil (:kind %)) others)
+        expected-ranges (reductions + (map :count non-nil-children))]
+    (cond
+      (not= 0 (count others))
+      {:error true, :kind :internal,
+       :description (str "Found internal non-regular node with "
+                         (count non-nil-children) " non-nil, "
+                         (count nil-children) " nil, "
+                         (count others) " 'other' children."
+                         " - expected 0 children after nils.")}
+      (not= (count non-nil-children) (aget rng 32))
+      {:error true, :kind :internal,
+       :description (str "Found internal non-regular node with "
+                         (count non-nil-children) " non-nil, "
+                         (count nil-children) " nil children, and"
+                         " last elem of ranges=" (aget rng 32)
+                         " - expected it to match # non-nil children.")}
+      (not= expected-ranges (take (count expected-ranges) (seq rng)))
+      {:error true, :kind :internal,
+       :description (str "Found internal non-regular node with "
+                         (count non-nil-children) " non-nil, "
+                         (count nil-children) " nil children, and"
+                         " # children prefix sums: " expected-ranges
+                         " - expected that to match stored ranges: "
+                         (seq rng))}
+      :else
+      {:error false, :kind :internal, :full? false,
+       :count (last expected-ranges)})))
+
+
+(defn ranges-errors [v]
+  (let [{:keys [v extract-root extract-shift ^NodeManager nm]}
+        (unwrap-subvec-accessors-for v)
+        root  (extract-root v)
+        shift (extract-shift v)]
+    (letfn [
+      (go [shift node]
+        (cond
+          (nil? node) {:error false :kind :nil}
+          (zero? shift) (let [n (count (.array nm node))]
+                          (merge {:error (zero? n), :kind :leaves,
+                                  :full? (= n 32), :count n}
+                                 (if (zero? n)
+                                   {:description
+                                    (str "Leaf array has 0 elements."
+                                         "  Expected > 0.")})))
+          :else ;; non-0 shift
+          (let [children (map (partial go (- shift 5))
+                              (let [arr (.array nm node)]
+                                (if (.regular nm node)
+                                  arr
+                                  (butlast arr))))
+                errs (filter :error children)]
+            (cond
+              (seq errs) {:error true, :description "One or more errors found",
+                          :data errs}
+              (not= 32 (count children))
+              {:error true, :kind :internal,
+               :description (str "Found internal node that has "
+                                 (count children) " children - expected 32.")}
+              (.regular nm node) (regular-node-errors children)
+              :else (non-regular-node-errors node nm children)))))]
+      (go shift root))))
