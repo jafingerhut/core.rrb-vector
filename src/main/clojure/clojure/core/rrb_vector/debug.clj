@@ -408,14 +408,19 @@
             not-threads (remove thread? non-nils)
             root-edit (.edit (extract-root v))]
         (cond
-          (seq not-threads) {:error true
-                             :description "Found edit AtomicReference ref'ing neither nil nor a Thread object"
-                             :data ihm}
+          (seq not-threads)
+          {:error true
+           :description (str "Found edit AtomicReference ref'ing neither nil"
+                             " nor a Thread object")
+           :data ihm}
           (persistent-vector-type? v)
           (if (= (count non-nils) 0)
             {:error false}
             {:error true
-             :description "Within a persistent (i.e. not transient) vector, found at least one edit AtomicReference object that ref's a Thread object.  Expected all of them to be nil."
+             :description (str "Within a persistent (i.e. not transient)"
+                               " vector, found at least one edit"
+                               " AtomicReference object that ref's a Thread"
+                               " object.  Expected all of them to be nil.")
              :data ihm
              :val1 (count non-nils)
              :val2 non-nils})
@@ -424,7 +429,10 @@
           (cond
             (not= (count non-nils) 1)
             {:error true
-             :description (str "Within a transient vector, found " (count non-nils) " edit AtomicReference object(s) that ref's a Thread object.  Expected exactly 1.")
+             :description (str "Within a transient vector, found "
+                               (count non-nils) " edit AtomicReference"
+                               " object(s) that ref's a Thread object."
+                               "  Expected exactly 1.")
              :data ihm
              :val1 (count non-nils)
              :val2 non-nils}
@@ -447,5 +455,6 @@
             :else {:error false})
 
           :else {:error true
-                 :description (str "Unknown class " klass " for object checked by edit-nodes-wrong-number-of-threads")
+                 :description (str "Unknown class " klass " for object checked"
+                                   " by edit-nodes-wrong-number-of-threads")
                  :data v})))))
