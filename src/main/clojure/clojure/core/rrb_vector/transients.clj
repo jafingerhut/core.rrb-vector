@@ -151,9 +151,10 @@
                   ret)
               (do (when (>= li 31)
                     ;; See Note 1
-                    (let [msg (str "Setting index " (inc li) " of vector object"
-                                   " array to a node when that index should"
-                                   " only be used for storing range arrays.")
+                    (let [msg (str "Assigning index " (inc li) " of vector"
+                                   " object array to become a node, when that"
+                                   " index should only be used for storing"
+                                   " range arrays.")
                           data {:shift shift, :cnd cnt,
                                 :current-node current-node,
                                 :tail-node tail-node, :rngs rngs, :li li,

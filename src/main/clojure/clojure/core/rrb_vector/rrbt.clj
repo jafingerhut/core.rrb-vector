@@ -375,7 +375,11 @@
             new-arr (.array am new-len)]
         (System/arraycopy arr start new-arr 0 new-len)
         ;; jafingerhut TBD: This returns a node with edit=nil.  Is
-        ;; that bad?  If so, what should be used instead?
+        ;; that bad?  If this were done in a transient vector on the
+        ;; root node's edit field, it could cause a
+        ;; NullPointerException when ensureEditable was called.  On a
+        ;; persistent vector, I cannot think of any harm it could
+        ;; cause.
         (.node nm nil new-arr))
       (let [regular? (.regular nm node)
             arr      (.array nm node)
@@ -818,6 +822,10 @@
                        (unchecked-subtract-int shift (int 5)))))))) 
       (throw (IndexOutOfBoundsException.))))
 
+  ;; Note 1: See the corresponding Note 1 near the pushTail method in
+  ;; transients.clj for transient-helper.  The two pushTail
+  ;; implementations are very similar, and likely have similar bugs
+  ;; and similar fixes that would apply to both.
   (pushTail [this shift cnt node tail-node]
     (dbgln "Vector.pushTail shift=" shift "cnt=" cnt)
     (if (let [tmp (.regular nm node)]
@@ -865,7 +873,17 @@
           (do (aset ^objects arr li cret)
               (aset rngs li (unchecked-add-int (aget rngs li) (int 32)))
               ret)
-          (do (aset ^objects arr (unchecked-inc-int li)
+          (do (when (>= li 31)
+                ;; See Note 1
+                (let [msg (str "Assigning index " (inc li) " of vector"
+                               " object array to become a node, when that"
+                               " index should only be used for storing"
+                               " range arrays.")
+                      data {:shift shift, :cnd cnt, :node node,
+                            :tail-node tail-node, :rngs rngs, :li li,
+                            :cret cret}]
+                  (throw (ex-info msg data))))
+              (aset ^objects arr (unchecked-inc-int li)
                     (.newPath this (.edit nm root)
                               (unchecked-subtract-int shift (int 5))
                               tail-node))

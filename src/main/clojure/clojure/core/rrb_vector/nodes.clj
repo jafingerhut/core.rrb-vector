@@ -115,6 +115,7 @@
                       (unchecked-subtract-int (int shift) (int 5))
                       (unchecked-add-int
                        (unchecked-subtract-int (aget rngs 31) (aget rngs 30))
+                       ;; jafingerhut TBD: Why add 32?
                        (int 32))))))))
 
 ;;; find nil / 0

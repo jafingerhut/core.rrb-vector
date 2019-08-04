@@ -219,15 +219,27 @@
   ;; This one passes
   (is (= (play-core-plus-checks 10 1128)
          (play-rrbv-plus-checks 10 1128)))
-  ;; This ends up with (play :rrb 10 1129) throwing an exception
+  ;; This ends up with (play-rrbv-plus-checks 10 1129) throwing an exception
   (if expect-failures
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"Setting index 32 of vector object array to a node"
+                          #"Assigning index 32 of vector object array to become a node"
                           (= (play-core-plus-checks 10 1129)
                              (play-rrbv-plus-checks 10 1129))))
     (is (= (play-core-plus-checks 10 1129)
-           (play-rrbv-plus-checks 10 1129)))))
+           (play-rrbv-plus-checks 10 1129))))
 
+  ;; The previous test demonstrates a bug in the transient RRB vector
+  ;; implementation.  The one below demonstrates a similar bug in the
+  ;; persistent RRB vector implementation.
+  (let [v1128 (:marbles (last (play-rrbv-plus-checks 10 1128)))
+        v1129-pre (-> v1128
+                      (fv/subvec 2)
+                      (conj 2001))]
+    (if expect-failures
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Assigning index 32 of vector object array to become a node"
+                            (conj v1129-pre 2002)))
+      (is (every? integer? (conj v1129-pre 2002))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
