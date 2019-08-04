@@ -221,8 +221,8 @@
          (play-rrbv-plus-checks 10 1128)))
   ;; This ends up with (play :rrb 10 1129) throwing an exception
   (if expect-failures
-    (is (thrown-with-msg? ClassCastException
-                          #"clojure.lang.PersistentVector\$Node cannot be cast to \[I"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"Setting index 32 of vector object array to a node"
                           (= (play-core-plus-checks 10 1129)
                              (play-rrbv-plus-checks 10 1129))))
     (is (= (play-core-plus-checks 10 1129)
