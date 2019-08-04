@@ -125,6 +125,10 @@
           (let [arr  (.array nm ret)
                 rngs (ranges nm ret)
                 li   (unchecked-dec-int (aget rngs 32))
+                ;; jafinger TBD: I believe li must be in range [0, 31]
+                ;; here.  Good to assert it, at least via a
+                ;; load/compile-time option that emits no code if the
+                ;; option is disabled?
                 cret (if (== shift 5)
                        nil
                        (let [child (.ensureEditable this nm am

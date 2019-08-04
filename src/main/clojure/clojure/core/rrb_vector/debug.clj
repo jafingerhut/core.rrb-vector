@@ -460,65 +460,83 @@
                                    " by edit-nodes-wrong-number-of-threads")
                  :data v})))))
 
-(defn regular-node-errors [children]
+(defn regular-node-errors [root-node? root-node-cnt children]
   ;; For regular nodes, there should be zero or more 'full' children,
   ;; followed optionally by one 'partial' child, followed by nils.
   (let [[full-children others] (split-with :full? children)
         [partial-children others] (split-with #(and (not (:full %))
                                                     (not= :nil (:kind %)))
                                               others)
-        [nil-children others] (split-with #(= :nil (:kind %)) others)]
+        [nil-children others] (split-with #(= :nil (:kind %)) others)
+        num-full (count full-children)
+        num-partial (count partial-children)
+        num-non-nil (+ num-full num-partial)]
     (cond
       (not= 0 (count others))
       {:error true, :kind :internal,
        :description (str "Found internal regular node with "
-                         (count full-children) " full, "
-                         (count partial-children) " partial, "
+                         num-full " full, " num-partial " partial, "
                          (count nil-children) " nil, "
                          (count others) " 'other' children."
                          " - expected 0 children after nils.")}
-      (> (count partial-children) 1)
+      (> num-partial 1)
       {:error true, :kind :internal,
        :description (str "Found internal regular node with "
-                         (count full-children) " full, "
-                         (count partial-children) " partial, "
+                         num-full " full, " num-partial " partial, "
                          (count nil-children) " nil children"
                          " - expected 0 or 1 partial.")}
+      (not (or (and root-node?
+                    (<= root-node-cnt 32)  ;; all elements in tail
+                    (= 0 num-non-nil))
+               (<= 1 num-non-nil 32)))
+      {:error true, :kind :internal
+       :description
+       (str "Found internal regular node with # full + # partial=" num-non-nil
+            " children outside of range [1, 32]."
+            " root-node?=" root-node? " root-node-cnt=" root-node-cnt)
+       :data children}
       :else
       {:error false, :kind :internal,
        :full? (= 32 (count full-children))
-       :count (reduce + (map #(or (:count %) 0) children))}
-      )))
+       :count (reduce + (map #(or (:count %) 0) children))})))
 
 
 (defn non-regular-node-errors [node nm children]
   (let [rng (ranges nm node)
         [non-nil-children others] (split-with #(not= :nil (:kind %)) children)
         [nil-children others] (split-with #(= :nil (:kind %)) others)
+        num-non-nil (count non-nil-children)
+        num-nil (count nil-children)
         expected-ranges (reductions + (map :count non-nil-children))]
     (cond
       (not= 0 (count others))
       {:error true, :kind :internal,
        :description (str "Found internal non-regular node with "
-                         (count non-nil-children) " non-nil, "
-                         (count nil-children) " nil, "
+                         num-non-nil " non-nil, " num-nil " nil, "
                          (count others) " 'other' children."
                          " - expected 0 children after nils.")}
-      (not= (count non-nil-children) (aget rng 32))
+      (not= num-non-nil (aget rng 32))
       {:error true, :kind :internal,
        :description (str "Found internal non-regular node with "
-                         (count non-nil-children) " non-nil, "
-                         (count nil-children) " nil children, and"
+                         num-non-nil " non-nil, " num-nil " nil children, and"
                          " last elem of ranges=" (aget rng 32)
                          " - expected it to match # non-nil children.")}
       (not= expected-ranges (take (count expected-ranges) (seq rng)))
       {:error true, :kind :internal,
        :description (str "Found internal non-regular node with "
-                         (count non-nil-children) " non-nil, "
-                         (count nil-children) " nil children, and"
+                         num-non-nil " non-nil, " num-nil " nil children, and"
                          " # children prefix sums: " expected-ranges
                          " - expected that to match stored ranges: "
                          (seq rng))}
+      ;; I believe that there must always be at least one
+      ;; non-nil-children.  By checking for this condition, we will
+      ;; definitely find out if it is ever violated.
+      ;; TBD: What if we have a tree with ranges, and then remove all
+      ;; elements?  Does the resulting tree triger this error?
+      (not (<= 1 (aget rng 32) 32))
+      {:error true, :kind :internal
+       :description (str "Found internal non-regular node with (aget rng 32)"
+                         "=" (aget rng 32) " outside of range [1, 32].")}
       :else
       {:error false, :kind :internal, :full? false,
        :count (last expected-ranges)})))
@@ -528,7 +546,8 @@
   (let [{:keys [v extract-root extract-shift ^NodeManager nm]}
         (unwrap-subvec-accessors-for v)
         root  (extract-root v)
-        shift (extract-shift v)]
+        root-node-cnt (count v)
+        root-shift (extract-shift v)]
     (letfn [
       (go [shift node]
         (cond
@@ -554,6 +573,7 @@
               {:error true, :kind :internal,
                :description (str "Found internal node that has "
                                  (count children) " children - expected 32.")}
-              (.regular nm node) (regular-node-errors children)
+              (.regular nm node) (regular-node-errors (= shift root-shift)
+                                                      root-node-cnt children)
               :else (non-regular-node-errors node nm children)))))]
-      (go shift root))))
+      (go root-shift root))))
