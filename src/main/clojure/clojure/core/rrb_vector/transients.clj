@@ -85,6 +85,15 @@
               (aset new-arr 32 (aclone (ints (aget ^objects new-arr 32)))))
             (.node nm root-edit new-arr)))))
 
+    ;; Note 1: See the code in namespace
+    ;; clojure.core.rrb-failing-tests, deftest
+    ;; many-subvec-and-catvec-leads-to-exception, for a way to
+    ;; reproduce the condition that leads to the error message below,
+    ;; repeatably.  Shortly after the error message is printed, if you
+    ;; do anything that does a seq over the resulting data structure,
+    ;; or probably many other operations, it throws an exception
+    ;; because the place where the code expects to find a Java array
+    ;; of ints, it instead finds a NodeVec object.
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
       (dbgln "transient-helper.pushTail shift=" shift "cnt=" cnt)
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
@@ -135,26 +144,21 @@
                                       root-edit
                                       child
                                       tail-node))))]
-            (dbgln "transient-helper.pushTail cret=" cret)
+            (dbgln "transient-helper.pushTail shift=" shift "cret=" cret)
             (if cret
               (do (aset ^objects arr li cret)
                   (aset rngs li (unchecked-add-int (aget rngs li) 32))
                   ret)
-              ;; See the code in namespace
-              ;; clojure.core.rrb-failing-tests, deftest
-              ;; many-subvec-and-catvec-leads-to-exception, for a way
-              ;; to reproduce the condition that leads to the error
-              ;; message below, repeatably.  Shortly after the error
-              ;; message is printed, if you do anything that does a
-              ;; seq over the resulting data structure, or probably
-              ;; many other operations, it throws an exception because
-              ;; the place where the code expects to find a Java array
-              ;; of ints, it instead finds a NodeVec object.
-              (do (when (== li 31)
-                    (println (str "ERROR: Setting arr 32 to ret value of"
-                                  " (.newPath ...) cnt=" cnt
-                                  " shift=" shift " li=" li
-                                  " rngs=" (seq rngs))))
+              (do (when (>= li 31)
+                    ;; See Note 1
+                    (let [msg (str "Setting index " (inc li) " of vector object"
+                                   " array to a node when that index should"
+                                   " only be used for storing range arrays.")
+                          data {:shift shift, :cnd cnt,
+                                :current-node current-node,
+                                :tail-node tail-node, :rngs rngs, :li li,
+                                :cret cret}]
+                      (throw (ex-info msg data))))
                   (aset ^objects arr (inc li)
                         (.newPath this nm am
                                   (.array nm tail-node)
