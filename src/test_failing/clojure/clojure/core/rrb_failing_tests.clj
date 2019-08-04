@@ -239,7 +239,36 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"Assigning index 32 of vector object array to become a node"
                             (conj v1129-pre 2002)))
-      (is (every? integer? (conj v1129-pre 2002))))))
+      (is (every? integer? (conj v1129-pre 2002)))))
+
+  ;; The following sequence of operations gives a different exception
+  ;; than the above, and I suspect is probably a different root cause
+  ;; with a distinct fix required.  It might be the same root cause as
+  ;; npe-for-1025-then-pop! but I will add a separate test case until
+  ;; I know for sure.  Even if they are the same root cause, it does
+  ;; not take long to run.
+
+  ;; Note: Even once this bug is fixed, I want to know the answer to
+  ;; whether starting from v1128 and then pop'ing off each number of
+  ;; elements, until it is down to empty or very nearly so, causes any
+  ;; of the error checks within the current version of ranges-errors
+  ;; to give an error.  It may require some correcting.
+  (let [v1128 (:marbles (last (play-rrbv-plus-checks 10 1128)))
+        vpop1 (reduce (fn [v i] (pop v))
+                      v1128 (range 1026))]
+    (if expect-failures
+      (is (thrown? NullPointerException
+                   (pop vpop1)))
+      (is (every? integer? (pop vpop1))))
+    ;; The transient version below gives a similar exception, but the
+    ;; call stack goes through the transient version of popTail,
+    ;; rather than the persistent version of popTail that the one
+    ;; above does.  It seems likely that both versions of popTail have
+    ;; a similar bug.
+    (if expect-failures
+      (is (thrown? NullPointerException
+                   (pop! (transient vpop1))))
+      (is (every? integer? (pop! (transient vpop1)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
