@@ -2,13 +2,15 @@
   (:refer-clojure :exclude [assert ->VecSeq])
   (:require [clojure.core.rrb-vector.protocols
              :refer [PSliceableVector slicev
-                     PSpliceableVector splicev]]
+                     PSpliceableVector splicev
+                     PTransientDebugAccess]]
             [clojure.core.rrb-vector.nodes
              :refer [ranges overflow? last-range regular-ranges
                      first-child last-child remove-leftmost-child
                      replace-leftmost-child replace-rightmost-child
                      fold-tail new-path index-of-nil
                      object-am object-nm primitive-nm
+                     dbgln int-array?
                      branch-factor branch-factor-plus-one
                      branch-factor-minus-one branch-factor-squared
                      log-branch-factor branch-factor-bitmask
@@ -47,9 +49,6 @@
 
 (def ^:const rrbt-concat-threshold 5)    ;; TBD: should be same as branch-factor plus 1?
 (def ^:const max-extra-search-steps 2)
-
-
-
 
 (def ^:const elide-assertions? true)
 (def ^:const elide-debug-printouts? true)
@@ -848,6 +847,10 @@
                        (unchecked-subtract-int shift (int log-branch-factor)))))))) 
       (throw (IndexOutOfBoundsException.))))
 
+  ;; Note 1: See the corresponding Note 1 near the pushTail method in
+  ;; transients.clj for transient-helper.  The two pushTail
+  ;; implementations are very similar, and likely have similar bugs
+  ;; and similar fixes that would apply to both.
   (pushTail [this shift cnt node tail-node]
     (if (.regular nm node)
       (let [arr (aclone ^objects (.array nm node))
@@ -891,7 +894,17 @@
           (do (aset ^objects arr li cret)
               (aset rngs li (unchecked-add-int (aget rngs li) (int branch-factor)))
               ret)
-          (do (aset ^objects arr (unchecked-inc-int li)
+          (do (when (>= li branch-factor-minus-one)
+                ;; See Note 1
+                (let [msg (str "Assigning index " (inc li) " of vector"
+                               " object array to become a node, when that"
+                               " index should only be used for storing"
+                               " range arrays.")
+                      data {:shift shift, :cnd cnt, :node node,
+                            :tail-node tail-node, :rngs rngs, :li li,
+                            :cret cret}]
+                  (throw (ex-info msg data))))
+              (aset ^objects arr (unchecked-inc-int li)
                     (.newPath this (.edit nm root)
                               (unchecked-subtract-int shift (int log-branch-factor))
                               tail-node))
@@ -1898,4 +1911,10 @@
                 (recur (int i)
                        (aget ^objects (.array nm node) j)
                        (unchecked-subtract-int shift (int log-branch-factor)))))))) 
-      (throw (IndexOutOfBoundsException.)))))
+      (throw (IndexOutOfBoundsException.))))
+
+  PTransientDebugAccess
+  (debugGetRoot [_] root)
+  (debugGetShift [_] shift)
+  (debugGetTail [_] tail)
+  (debugGetCnt [_] cnt))

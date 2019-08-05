@@ -1,6 +1,6 @@
 (ns clojure.core.rrb-vector.transients
   (:require [clojure.core.rrb-vector.nodes
-             :refer [ranges last-range
+             :refer [ranges last-range dbgln int-array?
                      branch-factor branch-factor-plus-one
                      branch-factor-minus-one branch-factor-squared
                      log-branch-factor branch-factor-bitmask
@@ -89,6 +89,15 @@
               (aset new-arr branch-factor (aclone (ints (aget ^objects new-arr branch-factor)))))
             (.node nm root-edit new-arr)))))
 
+    ;; Note 1: See the code in namespace
+    ;; clojure.core.rrb-failing-tests, deftest
+    ;; many-subvec-and-catvec-leads-to-exception, for a way to
+    ;; reproduce the condition that leads to the error message below,
+    ;; repeatably.  Shortly after the error message is printed, if you
+    ;; do anything that does a seq over the resulting data structure,
+    ;; or probably many other operations, it throws an exception
+    ;; because the place where the code expects to find a Java array
+    ;; of ints, it instead finds a NodeVec object.
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
         (if (.regular nm ret)
@@ -140,7 +149,18 @@
               (do (aset ^objects arr li cret)
                   (aset rngs li (unchecked-add-int (aget rngs li) branch-factor))
                   ret)
-              (do (aset ^objects arr (inc li)
+              (do (when (>= li branch-factor-minus-one)
+                    ;; See Note 1
+                    (let [msg (str "Assigning index " (inc li) " of vector"
+                                   " object array to become a node, when that"
+                                   " index should only be used for storing"
+                                   " range arrays.")
+                          data {:shift shift, :cnd cnt,
+                                :current-node current-node,
+                                :tail-node tail-node, :rngs rngs, :li li,
+                                :cret cret}]
+                      (throw (ex-info msg data))))
+                  (aset ^objects arr (inc li)
                         (.newPath this nm am
                                   (.array nm tail-node)
                                   root-edit

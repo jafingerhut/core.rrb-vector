@@ -46,6 +46,14 @@
 (def ^:const log-branch-factor 3)
 (def ^:const branch-factor-bitmask 0x7)   ;; must be 1 less than branch-factor
 
+(defn dbgln [& args]
+  #_(apply println args))
+
+(defn int-array? [x]
+  (and (not (nil? x))
+       (.isArray (class x))
+       (= Integer/TYPE (. (class x) getComponentType))))
+
 ;;; array managers
 
 (defmacro mk-am [t]
