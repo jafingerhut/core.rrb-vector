@@ -654,7 +654,7 @@
           ;; also likely a bug in the implementation if that happens.
           (>= root-shift 32)
           {:error true, :kind :root,
-           :description (str "shift of root is" root-shift " >= 32,"
+           :description (str "shift of root is " root-shift " >= 32,"
                              " which is not supported.")}
           ;; This is not necessarily a bug, but it seems likely to be
           ;; a bug if a tree is less than 1/1024 full compared to its

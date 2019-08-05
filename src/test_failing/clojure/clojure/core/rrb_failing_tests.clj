@@ -26,7 +26,7 @@
       (apply ret-check-fn err-desc-str ret args)
       ret)))
 
-(defn vector-ret-checks1 [err-desc-str ret & args]
+(defn vector-ret-checks-print-and-record [err-desc-str ret & args]
   ;;(println "checking ret val from" err-desc-str)
   (let [i (dv/edit-nodes-errors ret)]
     (when (:error i)
@@ -57,6 +57,25 @@
                                         :ret ret
                                         :args args
                                         :ranges-errors i}))))
+
+
+(defn vector-ret-checks-abort [err-desc-str ret & args]
+  (let [n1 (count @extra-check-failures)]
+    (apply vector-ret-checks-print-and-record err-desc-str ret args)
+    (let [n2 (count @extra-check-failures)]
+      (when (> n2 n1)
+        (throw (ex-info (str "There were " n1 " errors and now there are " n2)
+                        {}))))))
+
+;; By default, only print an error message and record error details if
+;; a problem is found in a function's return value.
+(def ret-checks vector-ret-checks-print-and-record)
+;; Use the following instead if you want to throw an exception if a
+;; return value has a problem found.  This is useful for interactive
+;; testing when you want to stop soon after a problem is found.  As of
+;; the code right now, the deftest tests are not written with this
+;; setting in mind.
+;;(def ret-checks vector-ret-checks-abort)
 
 
 (defn npe-for-1025-then-pop! []
@@ -98,7 +117,7 @@
 
 (deftest npe-for-1025-then-pop!-tests
   (doseq [kind [:object-array :long-array]]
-    (let [extra-checks vector-ret-checks1]
+    (let [extra-checks ret-checks]
       (with-redefs [vector (case kind
                              :object-array
                              (wrap-fn-with-ret-checks
@@ -190,7 +209,7 @@
                (conj ret {:round round :marbles marbles}))))))
 
 (defn play-core-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [catvec (wrap-fn-with-ret-checks
                           clojure.core/into "clojure.core/into"
                           extra-checks)
@@ -203,7 +222,7 @@
       (apply play args))))
 
 (defn play-rrbv-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [catvec (wrap-fn-with-ret-checks
                           fv/catvec "clojure.core.rrb-vector/catvec"
                           extra-checks)
@@ -283,15 +302,10 @@
   [arr idx]
   (catvec (subvec arr 0 idx) (subvec arr (inc idx))))
 
+(defn create-arr [size]
+  (vec (range 1 (inc size))))
 
-(defn create-arr
-  "Return a vector with pair [1 idx] where idx starts at 1...size (incl)."
-  [size]
-  (vec (for [x (range 1 (inc size))]
-         [1 x])))
-
-(defn fv-rest
-  [arr]
+(defn fv-rest [arr]
   (subvec arr 1))
 
 (defn calculate-opposite
@@ -300,8 +314,7 @@
   [n]
   (int (/ n 2)))
 
-(defn move
-  [elfs]
+(defn move [elfs]
   (let [lc (count elfs)]
     (if (= 1 lc)
       {:ok (first elfs)}
@@ -310,30 +323,22 @@
             _ (assert (> opposite-pos 0))
             _ (assert (< opposite-pos lc))
             opposite-elf (nth elfs opposite-pos)
-            other2       (fv-rest (remove-at elfs opposite-pos))
-            current2     [(+ (first current) (first opposite-elf))
-                          (second current)]]
-        (catvec other2 [current2])))))
+            other2       (fv-rest (remove-at elfs opposite-pos))]
+        (catvec other2 [current])))))
 
 
-(defn puzzle-b-sample
-  ([] (puzzle-b-sample (create-arr 5)))
-  ([elfs] (let [elfs2 (move elfs)]
-            (if (:ok elfs2)
-              (:ok elfs2)
-              ;;(println elfs2)
-              (recur elfs2)))))
-
-#_(s/fdef puzzle-b
-        :args (s/cat :n (s/and int? pos?))
-        :ret  (s/coll-of int?))
+(defn puzzle-b-sample [elfs round]
+  (let [elfs2 (move elfs)]
+    ;;(println "round=" round "# elfs=" (count elfs))
+    (if (:ok elfs2)
+      (:ok elfs2)
+      (recur elfs2 (inc round)))))
 
 (defn puzzle-b
-  ([] (puzzle-b 3014603))
-  ([n] (puzzle-b-sample (create-arr n))))
+  ([n] (puzzle-b-sample (create-arr n) 1)))
 
 (defn puzzle-b-core-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [catvec (wrap-fn-with-ret-checks
                           clojure.core/into "clojure.core/into"
                           extra-checks)
@@ -346,7 +351,7 @@
       (apply puzzle-b args))))
 
 (defn puzzle-b-rrbv-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [catvec (wrap-fn-with-ret-checks
                           fv/catvec "clojure.core.rrb-vector/catvec"
                           extra-checks)
@@ -360,6 +365,10 @@
 
 ;;(puzzle-b-rrbv-plus-checks 977)
 ;;(puzzle-b-rrbv-plus-checks 978)
+;;(count @extra-check-failures)
+;;(def a1 (nth @extra-check-failures 0))
+;;(use 'clojure.pprint)
+;;(pprint a1)
 
 ;;(def x (mapv (fn [i]
 ;;               (let [ret (puzzle-b-rrbv-plus-checks i)]
@@ -400,7 +409,7 @@
       coll2)))
 
 (defn assoc-in-bytevec-core-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [vector-of (wrap-fn-with-ret-checks
                              clojure.core/vector-of
                              "clojure.core/vector-of"
@@ -408,7 +417,7 @@
       (apply assoc-in-bytevec args))))
 
 (defn assoc-in-bytevec-rrbv-plus-checks [& args]
-  (let [extra-checks vector-ret-checks1]
+  (let [extra-checks ret-checks]
     (with-redefs [vector-of (wrap-fn-with-ret-checks
                              clojure.core.rrb-vector/vector-of
                              "clojure.core.rrb-vector/vector-of"
