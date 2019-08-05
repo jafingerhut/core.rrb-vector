@@ -200,3 +200,44 @@ definterface ITransientHelper - 39 lines 15-53
 def transient-helper - reify TransientHelper 240 lines 55-294
   popTail - 84 lines 154-237
 ```
+
+
+# Nodes in the trees implementing vectors
+
+Clojure's PersistentVector, implemented in Java, uses tree nodes with
+class PersistentVector$Node.  They have only two fields, 'array' and
+'edit'.
+
+It is not clear to me why, but when primitive vectors were added to
+Clojure, they used a new class clojure.core.VecNode for their tree
+nodes.  They have only two fields, 'arr' and 'edit', used for the same
+purposes as the similarly (but not identically!) named fields of
+PersistentVector$Node.
+
+In order to make it possible for core.rrb-vector to be passed either
+of those kinds of vectors created by Clojure's core library, and reuse
+their internal data structures, core.rrb-vector uses those same
+classes for its internal tree nodes, using the class
+PersistentVector$Node for vectors of arbitrary Object elements, or
+clojure.core.VecNode for vectors of primitives, as Clojure does.
+
+The NodeManager interface, and its 'object-nm' and 'primitive-nm'
+implementations, helps to write common code that manipulates trees,
+regardless of whether the nodes of the tree are type
+PersistentVector$Node or clojure.core.VecNode.
+
+
+# pushTail
+
+This method is called as part of the implementation of these
+operations:
+
+* clojure.lang.IPersistentCollection cons - Appears to be called from
+  clojure.lang.RT conj(IPersistentCollection coll, Object x) if coll
+  is not null.  That can in turn be called from clojure.core/conj
+
+* clojure.lang.ITransientCollection conj - called from
+  clojure.core/conj!
+
+clojure.lang.RT.cons(Object x, Object coll) does _not_ call the 'cons'
+method, but creates a new Cons object, or a new PersistentList object.
