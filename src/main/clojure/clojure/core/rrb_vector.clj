@@ -53,19 +53,7 @@
   ([v1]
      v1)
   ([v1 v2]
-   (let [ret (splicev v1 v2)
-         exp (into [] (concat (seq v1) (seq v2)))
-         ret-seq (try
-                   (doall (seq ret))
-                   (catch Throwable t
-                     (throw (ex-info "rrb/catvec (seq ret) evaluation"
-                                     {:v1 v1 :v2 v2 :ret ret :exp exp}
-                                     t))))
-         ]
-     (when-not (= (seq exp) ret-seq)
-       (ex-info "rrb/catvec (2 arg) returned incorrect value"
-                {:v1 v1 :v2 v2 :ret ret :exp exp}))
-     ret))
+     (splicev v1 v2))
   ([v1 v2 v3]
      (splicev (splicev v1 v2) v3))
   ([v1 v2 v3 v4]
@@ -84,18 +72,7 @@
   ([v start]
      (slicev v start (count v)))
   ([v start end]
-   (let [ret (slicev v start end)
-         exp (clojure.core/subvec (into [] (seq v)) start end)
-         ret-seq (try
-                   (doall (seq ret))
-                   (catch Throwable t
-                     (throw (ex-info "rrb/subvec (seq ret) evaluation"
-                                     {:v v :ret ret :exp exp}
-                                     t))))]
-     (when-not (= (seq exp) ret-seq)
-       (ex-info "rrb/subvec returned incorrect value"
-                {:v v :ret ret :exp exp}))
-     ret)))
+     (slicev v start end)))
 
 (defmacro ^:private gen-vector-method [& params]
   (let [arr (with-meta (gensym "arr__") {:tag 'objects})]
@@ -134,21 +111,9 @@
   If coll is a vector, returns an RRB vector using the internal tree
   of coll."
   [coll]
-  (let [ret
-        (if (vector? coll)
-          (as-rrbt coll)
-          (apply vector coll))
-        exp (into [] coll)
-        ret-seq (try
-                  (doall (seq ret))
-                  (catch Throwable t
-                    (throw (ex-info "rrb/vec (seq ret) evaluation"
-                                    {:coll coll :ret ret :exp exp}
-                                    t))))]
-    (when-not (= (seq exp) ret-seq)
-      (ex-info "rrb/vec returned incorrect value"
-               {:coll coll :ret ret :exp exp}))
-    ret))
+  (if (vector? coll)
+    (as-rrbt coll)
+    (apply vector coll)))
 
 (defmacro ^:private gen-vector-of-method [t & params]
   (let [am  (gensym "am__")
