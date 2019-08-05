@@ -1,6 +1,6 @@
 (ns clojure.core.rrb-vector.transients
   (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range dbgln
-                                                   int-array?]])
+                                                   int-array? overflow?]])
   (:import (clojure.core.rrb_vector.nodes NodeManager)
            (clojure.core ArrayManager)
            (java.util.concurrent.atomic AtomicReference)))
@@ -51,9 +51,10 @@
 (def ^ITransientHelper transient-helper
   (reify ITransientHelper
     (editableRoot [this nm am root]
-      (.node nm
-             (AtomicReference. (Thread/currentThread))
-             (clojure.core/aclone ^objects (.array nm root))))
+      (let [new-arr (clojure.core/aclone ^objects (.array nm root))]
+        (if (== 33 (alength ^objects new-arr))
+          (aset new-arr 32 (aclone (ints (aget ^objects new-arr 32)))))
+        (.node nm (AtomicReference. (Thread/currentThread)) new-arr)))
 
     (editableTail [this am tail]
       (let [ret (.array am 32)]
@@ -94,6 +95,12 @@
     ;; or probably many other operations, it throws an exception
     ;; because the place where the code expects to find a Java array
     ;; of ints, it instead finds a NodeVec object.
+    
+    ;; Note 2: In the worst case, when the tree is nearly full,
+    ;; calling overflow? here takes run time O(tree_depth^2) here.
+    ;; That could be made O(tree_depth).  One way would be to call
+    ;; pushTail in hopes that it succeeds, but return failure on full,
+    ;; e.g. return nil.
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
       (dbgln "transient-helper.pushTail shift=" shift "cnt=" cnt)
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
@@ -141,7 +148,10 @@
                                       (aget rngs li)
                                       (aget rngs (unchecked-dec-int li)))
                                      (aget rngs 0))]
-                         (if-not (== ccnt (bit-shift-left 1 shift))
+                         ;; See Note 2
+                         (if-not (overflow? nm child
+                                            (unchecked-subtract-int shift 5)
+                                            ccnt)
                            (.pushTail this nm am
                                       (unchecked-subtract-int shift 5)
                                       (unchecked-inc-int ccnt)
@@ -179,13 +189,14 @@
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
         (if (.regular nm ret)
           (let [subidx (bit-and
-                        (bit-shift-right (unchecked-dec-int cnt) shift)
-                        0x1f)]
+                        (bit-shift-right (unchecked-subtract-int cnt (int 2))
+                                         (int shift))
+                        (int 0x1f))]
             (cond
               (> shift 5)
               (let [child (.popTail this nm am
                                     (unchecked-subtract-int shift 5)
-                                    cnt
+                                    cnt  ;; TBD: Should this be smaller than cnt?
                                     root-edit
                                     (aget ^objects (.array nm ret) subidx))]
                 (if (and (nil? child) (zero? subidx))
@@ -202,14 +213,7 @@
                 (aset ^objects arr subidx nil)
                 ret)))
           (let [rngs   (ranges nm ret)
-                subidx (bit-and
-                        (bit-shift-right (unchecked-dec-int cnt) shift)
-                        0x1f)
-                subidx (loop [subidx subidx]
-                         (if (or (zero? (aget rngs (unchecked-inc-int subidx)))
-                                 (== subidx 31))
-                           subidx
-                           (recur (unchecked-inc-int subidx))))]
+                subidx (unchecked-dec-int (aget rngs 32))]
             (cond
               (> shift 5)
               (let [child     (aget ^objects (.array nm ret) subidx)
@@ -219,7 +223,7 @@
                                  (aget rngs subidx)
                                  (aget rngs (unchecked-dec-int subidx))))
                     new-child (.popTail this nm am
-                                        (unchecked-subtract-int subidx 5)
+                                        (unchecked-subtract-int shift 5)
                                         child-cnt
                                         root-edit
                                         child)]
@@ -270,12 +274,13 @@
                 (.aset am arr (bit-and i 0x1f) val))
               (let [arr    (.array nm node)
                     subidx (bit-and (bit-shift-right i shift) 0x1f)
+                    next-shift (int (unchecked-subtract-int shift 5))
                     child  (.ensureEditable this nm am
                                             root-edit
                                             (aget ^objects arr subidx)
-                                            shift)]
+                                            next-shift)]
                 (aset ^objects arr subidx child)
-                (recur (unchecked-subtract-int shift 5) child))))
+                (recur next-shift child))))
           (let [arr    (.array nm ret)
                 rngs   (ranges nm ret)
                 subidx (bit-and (bit-shift-right i shift) 0x1f)

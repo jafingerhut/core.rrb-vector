@@ -826,6 +826,9 @@
   ;; transients.clj for transient-helper.  The two pushTail
   ;; implementations are very similar, and likely have similar bugs
   ;; and similar fixes that would apply to both.
+
+  ;; Note 2: See the corresponding Note 2 for the pushTail method in
+  ;; transients.clj.
   (pushTail [this shift cnt node tail-node]
     (dbgln "Vector.pushTail shift=" shift "cnt=" cnt)
     (if (let [tmp (.regular nm node)]
@@ -862,7 +865,10 @@
                                   (aget rngs li)
                                   (aget rngs (unchecked-dec-int li)))
                                  (aget rngs 0))]
-                     (if-not (== ccnt (bit-shift-left 1 shift))
+                     ;; See Note 2
+                     (if-not (overflow? nm child
+                                        (unchecked-subtract-int shift (int 5))
+                                        ccnt)
                        (.pushTail this
                                   (unchecked-subtract-int shift (int 5))
                                   (unchecked-inc-int ccnt)
@@ -895,7 +901,8 @@
   (popTail [this shift cnt node]
     (if (.regular nm node)
       (let [subidx (bit-and
-                    (bit-shift-right (unchecked-dec-int cnt) (int shift))
+                    (bit-shift-right (unchecked-subtract-int cnt (int 2))
+                                     (int shift))
                     (int 0x1f))]
         (cond
           (> (int shift) (int 5))
@@ -916,15 +923,8 @@
           (let [arr (aclone ^objects (.array nm node))]
             (aset arr subidx nil)
             (.node nm (.edit nm root) arr))))
-      (let [subidx (int (bit-and
-                         (bit-shift-right (unchecked-dec-int cnt) (int shift))
-                         (int 0x1f)))
-            rngs   (ranges nm node)
-            subidx (int (loop [subidx subidx]
-                          (if (or (zero? (aget rngs (unchecked-inc-int subidx)))
-                                  (== subidx (int 31)))
-                            subidx
-                            (recur (unchecked-inc-int subidx)))))
+      (let [rngs   (ranges nm node)
+            subidx (unchecked-dec-int (aget rngs 32))
             new-rngs (aclone rngs)]
         (cond
           (> (int shift) (int 5))
@@ -1014,9 +1014,10 @@
               (.aset am arr (bit-and i (int 0x1f)) val))
             (let [arr    (.array nm node)
                   subidx (bit-and (bit-shift-right i shift) (int 0x1f))
-                  child  (.clone nm am shift (aget ^objects arr subidx))]
+                  next-shift (int (unchecked-subtract-int shift (int 5)))
+                  child  (.clone nm am next-shift (aget ^objects arr subidx))]
               (aset ^objects arr subidx child)
-              (recur (unchecked-subtract-int shift (int 5)) child))))
+              (recur next-shift child))))
         node)
       (let [arr    (aclone ^objects (.array nm node))
             rngs   (ranges nm node)
@@ -1837,7 +1838,7 @@
 
       :else
       (let [new-tail-base (.arrayFor this (unchecked-subtract-int cnt (int 2)))
-            new-tail      (.aclone am new-tail-base)
+            new-tail      (.editableTail transient-helper am new-tail-base)
             new-tidx      (.alength am new-tail-base)
             new-root      (.popTail transient-helper nm am
                                     shift
@@ -1859,7 +1860,11 @@
                (nil? (aget ^objects (.array nm new-root) 1)))
           (do (set! cnt   (unchecked-dec-int cnt))
               (set! shift (unchecked-subtract-int shift (int 5)))
-              (set! root  (aget ^objects (.array nm new-root) 0))
+              (set! root  (.ensureEditable
+                           transient-helper nm am
+                           (.edit nm root)
+                           (aget ^objects (.array nm new-root) 0)
+                           (unchecked-subtract-int shift (int 5))))
               (set! tail  new-tail)
               (set! tidx  new-tidx)
               this)
