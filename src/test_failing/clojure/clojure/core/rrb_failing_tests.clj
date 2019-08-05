@@ -28,6 +28,14 @@
 
 (defn vector-ret-checks1 [err-desc-str ret & args]
   ;;(println "checking ret val from" err-desc-str)
+  (let [i (dv/edit-nodes-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! extra-check-failures conj {:err-desc-str err-desc-str
+                                        :ret ret
+                                        :args args
+                                        :edit-nodes-errors i})))
   (when-let [err (seq (dv/ranges-not-int-array ret))]
     (println "ERROR:" err-desc-str "ret has non int-array ranges")
     (swap! extra-check-failures conj {:err-desc-str err-desc-str
@@ -41,14 +49,6 @@
                                         :ret ret
                                         :args args
                                         :basic-node-errors i})))
-  (let [i (dv/edit-nodes-errors ret)]
-    (when (:error i)
-      (println (str "ERROR: found problem with ret value from " err-desc-str
-                    ": " (:description i)))
-      (swap! extra-check-failures conj {:err-desc-str err-desc-str
-                                        :ret ret
-                                        :args args
-                                        :edit-nodes-errors i})))
   (let [i (dv/ranges-errors ret)]
     (when (:error i)
       (println (str "ERROR: found problem with ret value from " err-desc-str
@@ -376,7 +376,7 @@
   ;; ArrayIndexOutOfBoundsException
   (if expect-failures
     (is (thrown-with-msg? ArrayIndexOutOfBoundsException
-                          #"^33$"
+                          #"^(33|Index 33 out of bounds for length 33)$"
                           (every? integer? (puzzle-b-rrbv-plus-checks 978))))
     (is (every? integer? (puzzle-b-rrbv-plus-checks 978)))))
 
@@ -433,7 +433,7 @@
       (if expect-failures
         (is (thrown-with-msg?
              ClassCastException
-             #"\[B cannot be cast to \[Ljava\.lang\.Object;"
+             #"\[B cannot be cast to( class)? \[Ljava\.lang\.Object;"
              (= (apply assoc-in-bytevec-core-plus-checks false args)
                 (apply assoc-in-bytevec-rrbv-plus-checks use-transient? args)))
             (str "args=" (cons use-transient? args)))
