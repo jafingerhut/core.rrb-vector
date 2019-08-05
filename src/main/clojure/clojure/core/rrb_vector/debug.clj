@@ -591,6 +591,11 @@
        :count (last expected-ranges)})))
 
 
+(defn max-capacity-over-1024 [root-shift]
+  (let [shift-amount (max 0 (- root-shift 10))]
+    (bit-shift-left 1 shift-amount)))
+
+
 (defn ranges-errors [v]
   (let [{:keys [v extract-root extract-shift extract-tail extract-cnt
                 ^NodeManager nm ^ArrayManager am]}
@@ -642,4 +647,24 @@
           {:error true, :kind :root,
            :description (str "Found transient vector with tail length "
                              (.alength am tail) " - expecting 32")}
+          ;; It is always a bad thing if shift becomes more than 32,
+          ;; because the bit-shift-left and bit-shift-right operations
+          ;; on 32-bit ints actually behave like (bit-shift-left
+          ;; x (mod shift-amount 32)) for shift-amount over 32.  It is
+          ;; also likely a bug in the implementation if that happens.
+          (>= root-shift 32)
+          {:error true, :kind :root,
+           :description (str "shift of root is" root-shift " >= 32,"
+                             " which is not supported.")}
+          ;; This is not necessarily a bug, but it seems likely to be
+          ;; a bug if a tree is less than 1/1024 full compared to its
+          ;; max capacity.  1/32 full is normal when a tree becomes 1
+          ;; deeper than it was before.
+          (< 0 (:count x) (max-capacity-over-1024 root-shift))
+          {:error true, :kind :root,
+           :description (str "For root shift=" root-shift " the maximum "
+                             "capacity divided by 1024 is "
+                             (max-capacity-over-1024 root-shift)
+                             " but the tree contains only "
+                             (:count x) " vector elements outside of the tail")}
           :else x)))))
