@@ -88,13 +88,13 @@
     ;; This fails with NullPointerException while traversing the seq
     (if expect-failures
       (is (thrown? NullPointerException
-                   (= (seq v3) (range (inc bfactor-squared)))))
-      (is (= (seq v3) (range (inc bfactor-squared)))))
+                   (= (seq v3) (range bfactor-squared))))
+      (is (= (seq v3) (range bfactor-squared))))
     ;; This one causes a NullPointerException while traversing the seq
     (if expect-failures
       (is (thrown? NullPointerException
-                   (= (seq v4) (range (inc bfactor-squared)))))
-      (is (= (seq v4) (range (inc bfactor-squared)))))))
+                   (= (seq v4) (range bfactor-squared))))
+      (is (= (seq v4) (range bfactor-squared))))))
 
 (deftest npe-for-1025-then-pop!-tests
   (doseq [kind [:object-array :long-array]]
@@ -268,7 +268,7 @@
     (if expect-failures
       (is (thrown? NullPointerException
                    (pop! (transient vpop1))))
-      (is (every? integer? (pop! (transient vpop1)))))))
+      (is (every? integer? (persistent! (pop! (transient vpop1))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
