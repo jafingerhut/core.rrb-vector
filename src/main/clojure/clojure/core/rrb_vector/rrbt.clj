@@ -1913,4 +1913,5 @@
   PTransientDebugAccess
   (debugGetRoot [_] root)
   (debugGetShift [_] shift)
-  (debugGetTail [_] tail))
+  (debugGetTail [_] tail)
+  (debugGetCnt [_] cnt))

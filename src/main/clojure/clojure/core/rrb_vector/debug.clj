@@ -1,27 +1,47 @@
 (ns clojure.core.rrb-vector.debug
   (:require clojure.core.rrb-vector.rrbt
             [clojure.core.rrb-vector.nodes
-             :refer [ranges object-nm primitive-nm int-array?]]
+             :refer [ranges object-nm primitive-nm object-am int-array?]]
             [clojure.core.rrb-vector :as fv])
   (:import (clojure.lang PersistentVector PersistentVector$TransientVector
                          PersistentVector$Node APersistentVector$SubVector)
            (java.util.concurrent.atomic AtomicReference)
-           (java.lang.reflect Field)
-           (clojure.core Vec VecNode)
+           (java.lang.reflect Field Method)
+           (clojure.core Vec VecNode ArrayManager)
            (clojure.core.rrb_vector.rrbt Vector Transient)
            (clojure.core.rrb_vector.nodes NodeManager)))
 
 ;; Work around the fact that several fields of type
 ;; PersistentVector$TransientVector are private, but note that this is
 ;; only intended for debug use.
-(def transient-core-vec (transient (vector)))
-(def ^Class transient-core-vec-class (class transient-core-vec))
+(def ^Class transient-core-vec-class (class (transient (vector))))
 (def ^Field transient-core-root-field (.getDeclaredField transient-core-vec-class "root"))
 (.setAccessible transient-core-root-field true)
 (def ^Field transient-core-shift-field (.getDeclaredField transient-core-vec-class "shift"))
 (.setAccessible transient-core-shift-field true)
 (def ^Field transient-core-tail-field (.getDeclaredField transient-core-vec-class "tail"))
 (.setAccessible transient-core-tail-field true)
+(def ^Field transient-core-cnt-field (.getDeclaredField transient-core-vec-class "cnt"))
+(.setAccessible transient-core-cnt-field true)
+
+(def transient-core-vec-tailoff-methods
+  (filter #(= "tailoff" (.getName %))
+          (.getDeclaredMethods transient-core-vec-class)))
+(assert (= (count transient-core-vec-tailoff-methods) 1))
+(def ^Method transient-core-vec-tailoff-method
+  (first transient-core-vec-tailoff-methods))
+(.setAccessible transient-core-vec-tailoff-method true)
+
+
+(def ^Class persistent-core-vec-class (class (vector)))
+(def persistent-core-vec-tailoff-methods
+  (filter #(= "tailoff" (.getName %))
+          (.getDeclaredMethods persistent-core-vec-class)))
+(assert (= (count persistent-core-vec-tailoff-methods) 1))
+(def ^Method persistent-core-vec-tailoff-method
+  (first persistent-core-vec-tailoff-methods))
+(.setAccessible persistent-core-vec-tailoff-method true)
+
 
 (defn internal-node-type? [obj]
   (contains? #{PersistentVector$Node VecNode} (class obj)))
@@ -39,6 +59,17 @@
                PersistentVector$TransientVector Transient}
              (class obj)))
 
+(defn debug-tailoff [v]
+  (cond
+    (instance? PersistentVector v)
+    (.invoke persistent-core-vec-tailoff-method v (object-array 0))
+
+    (= PersistentVector$TransientVector (class v))
+    (.invoke transient-core-vec-tailoff-method v (object-array 0))
+
+    :else
+    (.tailoff v)))
+
 (defn subvector-data [v]
   (if (instance? APersistentVector$SubVector v)
     (let [^APersistentVector$SubVector v v]
@@ -51,39 +82,57 @@
      :subvector? false
      :v v}))
 
+;; All of the classes below have a .tailoff method implementation that
+;; works correctly for that class.  You can use the debug-tailoff
+;; function to work around the fact that this method is not public for
+;; some of the vector classes.
+
 (defn accessors-for [v]
   (condp identical? (class v)
     PersistentVector [#(.-root ^PersistentVector %)
                       #(.-shift ^PersistentVector %)
                       #(.-tail ^PersistentVector %)
-                      object-nm]
+                      object-nm
+                      #(.-cnt ^PersistentVector %)
+                      object-am]
     PersistentVector$TransientVector
                      [#(.get transient-core-root-field ^PersistentVector$TransientVector %)
                       #(.get transient-core-shift-field ^PersistentVector$TransientVector %)
                       #(.get transient-core-tail-field ^PersistentVector$TransientVector %)
-                      object-nm]
+                      object-nm
+                      #(.get transient-core-cnt-field ^PersistentVector$TransientVector %)
+                      object-am]
     Vec              [#(.-root ^Vec %)
                       #(.-shift ^Vec %)
                       #(.-tail ^Vec %)
-                      primitive-nm]
+                      primitive-nm
+                      #(.-cnt ^Vec %)
+                      #(.-am ^Vec %)]
     Vector           [#(.-root ^Vector %)
                       #(.-shift ^Vector %)
                       #(.-tail ^Vector %)
-                      (.-nm ^Vector v)]
+                      (.-nm ^Vector v)
+                      #(.-cnt ^Vector %)
+                      #(.-am ^Vector %)]
     Transient        [#(.debugGetRoot ^Transient %)
                       #(.debugGetShift ^Transient %)
                       #(.debugGetTail ^Transient %)
-                      (.-nm ^Transient v)]))
+                      (.-nm ^Transient v)
+                      #(.debugGetCnt ^Transient %)
+                      (.-am ^Transient v)]))
 
 (defn unwrap-subvec-accessors-for [v]
   (let [{:keys [v] :as m} (subvector-data v)
-        [extract-root extract-shift extract-tail ^NodeManager nm]
+        [extract-root extract-shift extract-tail ^NodeManager nm extract-cnt
+         ^ArrayManager am]
         (accessors-for v)]
     (merge m
            {:extract-root extract-root
             :extract-shift extract-shift
             :extract-tail extract-tail
-            :nm nm})))
+            :nm nm
+            :extract-cnt extract-cnt
+            :am am})))
 
 (defn dbg-vec [v]
   (let [{:keys [v subvector? subvec-start subvec-end
@@ -543,11 +592,14 @@
 
 
 (defn ranges-errors [v]
-  (let [{:keys [v extract-root extract-shift ^NodeManager nm]}
+  (let [{:keys [v extract-root extract-shift extract-tail extract-cnt
+                ^NodeManager nm ^ArrayManager am]}
         (unwrap-subvec-accessors-for v)
         root  (extract-root v)
         root-node-cnt (count v)
-        root-shift (extract-shift v)]
+        root-shift (extract-shift v)
+        tail-off (debug-tailoff v)
+        tail (extract-tail v)]
     (letfn [
       (go [shift node]
         (cond
@@ -576,4 +628,18 @@
               (.regular nm node) (regular-node-errors (= shift root-shift)
                                                       root-node-cnt children)
               :else (non-regular-node-errors node nm children)))))]
-      (go root-shift root))))
+      (let [x (go root-shift root)]
+        (cond
+          (:error x) x
+          (not= tail-off (:count x))
+          {:error true, :kind :root,
+           :description (str "Found tail-off=" tail-off " != " (:count x)
+                             "=count of values beneath internal nodes")
+           :internal-node-leaf-count (:count x) :tail-off tail-off
+           :cnt (extract-cnt v)}
+          (and (transient-vector-type? v)
+               (not= (.alength am tail) 32))
+          {:error true, :kind :root,
+           :description (str "Found transient vector with tail length "
+                             (.alength am tail) " - expecting 32")}
+          :else x)))))

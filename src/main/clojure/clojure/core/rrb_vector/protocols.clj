@@ -9,4 +9,5 @@
 (defprotocol PTransientDebugAccess
   (debugGetRoot [v])
   (debugGetShift [v])
-  (debugGetTail [v]))
+  (debugGetTail [v])
+  (debugGetCnt [v]))
