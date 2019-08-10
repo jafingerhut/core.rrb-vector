@@ -7,6 +7,7 @@
   :parent [org.clojure/pom.contrib "0.1.2"]
   :dependencies [[org.clojure/clojure "1.5.1"]]
   :source-paths ["src/main/clojure"
+                 "src/main/cljc"
                  "src/main/cljs"]
   :test-paths ["src/test/clojure"]
   :jvm-opts ^:replace ["-XX:+UseG1GC"

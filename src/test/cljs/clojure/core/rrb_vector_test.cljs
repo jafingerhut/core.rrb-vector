@@ -1,13 +1,7 @@
 (ns clojure.core.rrb-vector-test
   (:require [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.debug :as dv]
-            [goog.string :as gstring]
-            goog.string.format))
-
-(set-print-fn! js/print)
-
-(defn format [& args]
-  (apply gstring/format args))
+            [clojure.core.rrb-vector.debug-platform-dependent :as dpd]))
 
 (defn test-slicing []
   (assert (dv/check-subvec 32000 10 29999 1234 18048 10123 10191)))
@@ -15,10 +9,10 @@
 (defn test-slicing-generative []
   (try (dv/generative-check-subvec 125 100000 10)
        (catch ExceptionInfo e
-         (throw (ex-info (format "%s: %s %s"
-                                 (ex-message e)
-                                 (:init-cnt (ex-data e))
-                                 (:s&es (ex-data e)))
+         (throw (ex-info (dpd/format "%s: %s %s"
+                                     (ex-message e)
+                                     (:init-cnt (ex-data e))
+                                     (:s&es (ex-data e)))
                          {}
                          (ex-cause e))))))
 
@@ -30,9 +24,9 @@
 (defn test-splicing-generative []
   (try (dv/generative-check-catvec 125 15 10 30000)
        (catch ExceptionInfo e
-         (throw (ex-info (format "%s: %s"
-                                 (.getMessage e)
-                                 (:cnts (ex-data e)))
+         (throw (ex-info (dpd/format "%s: %s"
+                                     (.getMessage e)
+                                     (:cnts (ex-data e)))
                          {}
                          (.getCause e))))))
 
@@ -87,8 +81,8 @@
 (defn test-relaxed []
   (assert (= (into (fv/catvec (vec (range 123)) (vec (range 68))) (range 64))
              (concat (range 123) (range 68) (range 64))))
-  (assert (= (dv/slow-into (fv/catvec (vec (range 123)) (vec (range 68)))
-                           (range 64))
+  (assert (= (dpd/slow-into (fv/catvec (vec (range 123)) (vec (range 68)))
+                            (range 64))
              (concat (range 123) (range 68) (range 64)))))
 
 (defn test-splice-high-subtree-branch-count []

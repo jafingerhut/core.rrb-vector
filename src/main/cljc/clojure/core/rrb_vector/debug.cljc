@@ -1,207 +1,103 @@
 (ns clojure.core.rrb-vector.debug
   (:require clojure.core.rrb-vector.rrbt
-            [clojure.core.rrb-vector.nodes
-             :refer [ranges object-nm primitive-nm object-am int-array?]]
-            [clojure.core.rrb-vector :as fv])
-  (:import (clojure.lang PersistentVector PersistentVector$TransientVector
-                         PersistentVector$Node APersistentVector$SubVector)
-           (java.util.concurrent.atomic AtomicReference)
-           (java.lang.reflect Field Method)
-           (clojure.core Vec VecNode ArrayManager)
-           (clojure.core.rrb_vector.rrbt Vector Transient)
-           (clojure.core.rrb_vector.nodes NodeManager)))
-
-;; Work around the fact that several fields of type
-;; PersistentVector$TransientVector are private, but note that this is
-;; only intended for debug use.
-(def ^Class transient-core-vec-class (class (transient (vector))))
-(def ^Field transient-core-root-field (.getDeclaredField transient-core-vec-class "root"))
-(.setAccessible transient-core-root-field true)
-(def ^Field transient-core-shift-field (.getDeclaredField transient-core-vec-class "shift"))
-(.setAccessible transient-core-shift-field true)
-(def ^Field transient-core-tail-field (.getDeclaredField transient-core-vec-class "tail"))
-(.setAccessible transient-core-tail-field true)
-(def ^Field transient-core-cnt-field (.getDeclaredField transient-core-vec-class "cnt"))
-(.setAccessible transient-core-cnt-field true)
-
-(def transient-core-vec-tailoff-methods
-  (filter #(= "tailoff" (.getName %))
-          (.getDeclaredMethods transient-core-vec-class)))
-(assert (= (count transient-core-vec-tailoff-methods) 1))
-(def ^Method transient-core-vec-tailoff-method
-  (first transient-core-vec-tailoff-methods))
-(.setAccessible transient-core-vec-tailoff-method true)
+            [clojure.core.rrb-vector :as fv]
+            ;; This page:
+            ;; https://clojure.org/guides/reader_conditionals refers
+            ;; to code that can go into common cljc files as platform
+            ;; independent, and the code in the clj or cljs files as
+            ;; platform dependent, so I will use that terminology
+            ;; here, too.
+            [clojure.core.rrb-vector.debug-platform-dependent :as pd]))
 
 
-(def ^Class persistent-core-vec-class (class (vector)))
-(def persistent-core-vec-tailoff-methods
-  (filter #(= "tailoff" (.getName %))
-          (.getDeclaredMethods persistent-core-vec-class)))
-(assert (= (count persistent-core-vec-tailoff-methods) 1))
-(def ^Method persistent-core-vec-tailoff-method
-  (first persistent-core-vec-tailoff-methods))
-(.setAccessible persistent-core-vec-tailoff-method true)
+;; Functions expected to be defined in the appropriate
+;; .debug-platform-dependent namespace:
 
+;; pd/internal-node?
+;; pd/persistent-vector?
+;; pd/transient-vector?
+;; pd/is-vector?
+;; pd/dbg-tailoff  (formerly debug-tailoff)
+;; pd/dbg-tidx (formerly debug-tailoff for clj, debug-tidx for cljs)
+;; pd/format
+;; pd/printf
+;; pd/subvector-data
+;; pd/unwrap-subvec-accessors-for
+;; pd/abbrev-for-type-of [vec-or-node]   (formerly abbrev-type-name, but move type/class call inside)
+;; pd/same-coll?   (written already for clj, TBD for cljs)
 
-(defn internal-node? [obj]
-  (contains? #{PersistentVector$Node VecNode} (class obj)))
+;; Functions returned from unwrap-subvec-accessors-for that have
+;; platform-dependent definitions, but the same general 'kind'
+;; arguments and return values, where 'kind' could be: any vector,
+;; persistent or transient, or a vector tree node object:
 
-(defn persistent-vector? [obj]
-  (contains? #{PersistentVector Vec Vector}
-             (class obj)))
+;; get-root - All get-* fns formerly called extract-* in the Java
+;;     platform dependent version of the debug namespace.
+;; get-shift
+;; get-tail
+;; get-cnt
+;; get-array [node]   - clj (.array nm node)   cljs (.-arr node)
+;; get-ranges [node]  - clj (ranges nm node)   cljs (node-ranges node)
+;; regular? [node]    - clj (.regular nm node) cljs (regular? node)
+;; tail-len [tail]    - clj (.alength am tail) cljs (alength tail)
 
-(defn transient-vector? [obj]
-  (contains? #{PersistentVector$TransientVector Transient}
-             (class obj)))
-
-(defn is-vector? [obj]
-  (contains? #{PersistentVector Vec Vector
-               PersistentVector$TransientVector Transient}
-             (class obj)))
-
-(defn debug-tailoff [v]
-  (cond
-    (instance? PersistentVector v)
-    (.invoke persistent-core-vec-tailoff-method v (object-array 0))
-
-    (= PersistentVector$TransientVector (class v))
-    (.invoke transient-core-vec-tailoff-method v (object-array 0))
-
-    :else
-    (.tailoff v)))
-
-(defn subvector-data [v]
-  (if (instance? APersistentVector$SubVector v)
-    (let [^APersistentVector$SubVector v v]
-      {:orig-v v
-       :subvector? true
-       :v (.v v)
-       :subvec-start (.start v)
-       :subvec-end (.end v)})
-    {:orig-v v
-     :subvector? false
-     :v v}))
-
-;; All of the classes below have a .tailoff method implementation that
-;; works correctly for that class.  You can use the debug-tailoff
-;; function to work around the fact that this method is not public for
-;; some of the vector classes.
-
-(defn accessors-for [v]
-  (condp identical? (class v)
-    PersistentVector [#(.-root ^PersistentVector %)
-                      #(.-shift ^PersistentVector %)
-                      #(.-tail ^PersistentVector %)
-                      object-nm
-                      #(.-cnt ^PersistentVector %)
-                      object-am]
-    PersistentVector$TransientVector
-                     [#(.get transient-core-root-field ^PersistentVector$TransientVector %)
-                      #(.get transient-core-shift-field ^PersistentVector$TransientVector %)
-                      #(.get transient-core-tail-field ^PersistentVector$TransientVector %)
-                      object-nm
-                      #(.get transient-core-cnt-field ^PersistentVector$TransientVector %)
-                      object-am]
-    Vec              [#(.-root ^Vec %)
-                      #(.-shift ^Vec %)
-                      #(.-tail ^Vec %)
-                      primitive-nm
-                      #(.-cnt ^Vec %)
-                      #(.-am ^Vec %)]
-    Vector           [#(.-root ^Vector %)
-                      #(.-shift ^Vector %)
-                      #(.-tail ^Vector %)
-                      (.-nm ^Vector v)
-                      #(.-cnt ^Vector %)
-                      #(.-am ^Vector %)]
-    Transient        [#(.debugGetRoot ^Transient %)
-                      #(.debugGetShift ^Transient %)
-                      #(.debugGetTail ^Transient %)
-                      (.-nm ^Transient v)
-                      #(.debugGetCnt ^Transient %)
-                      (.-am ^Transient v)]))
-
-(defn unwrap-subvec-accessors-for [v]
-  (let [{:keys [v] :as m} (subvector-data v)
-        [extract-root extract-shift extract-tail ^NodeManager nm extract-cnt
-         ^ArrayManager am]
-        (accessors-for v)]
-    (merge m
-           {:extract-root extract-root
-            :extract-shift extract-shift
-            :extract-tail extract-tail
-            :nm nm
-            :extract-cnt extract-cnt
-            :am am})))
-
-(defn abbrev-type-name [klass]
-  (let [cn (.getName klass)
-        d  (.lastIndexOf cn ".")]
-    (subs cn (inc d))))
+;; NO: nm am - cljs doesn't need them, and clj only uses them for the
+;; last few functions above.
 
 (defn dbg-vec [v]
-  (let [{:keys [v subvector? subvec-start subvec-end extract-root
-                extract-shift extract-tail extract-cnt ^NodeManager nm]}
-        (unwrap-subvec-accessors-for v)
-        root  (extract-root v)
-        shift (extract-shift v)
-        tail  (extract-tail v)
-        cnt   (extract-cnt v)]
+  (let [{:keys [v subvector? subvec-start subvec-end get-root get-shift
+                get-tail get-cnt get-array get-ranges regular? tail-len]}
+        (pd/unwrap-subvec-accessors-for v)
+        root  (get-root v)
+        shift (get-shift v)
+        tail  (get-tail v)
+        cnt   (get-cnt v)]
     (when subvector?
-      (printf "SubVector from start %d to end %d of vector:\n"
-              subvec-start subvec-end))
+      (pd/printf "SubVector from start %d to end %d of vector:\n"
+                 subvec-start subvec-end))
     (letfn [(go [indent shift i node]
               (when node
                 (dotimes [_ indent]
                   (print "  "))
-                (printf "%02d:%02d %s" shift i (abbrev-type-name (class node)))
-                (if-not (or (zero? shift) (.regular nm node))
-                  (print ":" (seq (ranges nm node))))
+                (pd/printf "%02d:%02d %s" shift i (pd/abbrev-for-type-of node))
+                (if-not (or (zero? shift) (regular? node))
+                  (print ":" (seq (get-ranges node))))
                 (if (zero? shift)
-                  (print ":" (vec (.array nm node))))
+                  (print ":" (vec (get-array node))))
                 (println)
                 (if-not (zero? shift)
                   (dorun
                    (map-indexed (partial go (inc indent) (- shift 5))
-                                (let [arr (.array nm node)]
-                                  (if (.regular nm node)
+                                (let [arr (get-array node)]
+                                  (if (regular? node)
                                     arr
                                     (butlast arr))))))))]
-      (printf "%s (%d elements):\n" (abbrev-type-name (class v)) (count v))
+      (pd/printf "%s (%d elements):\n" (pd/abbrev-for-type-of v) (count v))
       (go 0 shift 0 root)
-      (println (if (transient-vector? v)
-                 (format "tail (tidx %d):" (- cnt (debug-tailoff v)))
+      (println (if (pd/transient-vector? v)
+                 (pd/format "tail (tidx %d):" (pd/dbg-tidx v))
                  "tail:")
                (vec tail)))))
 
+;; TBD: Needs a little reader conditional magic for catch Exception
 (defn first-diff [xs ys]
   (loop [i 0 xs (seq xs) ys (seq ys)]
     (if (try (and xs ys (= (first xs) (first ys)))
-             (catch Exception e
+             (catch #?(:clj Exception :cljs js/Error) e
                (.printStackTrace e)
                i))
       (let [xs (try (next xs)
-                    (catch Exception e
+                    (catch #?(:clj Exception :cljs js/Error) e
                       (prn :xs i)
                       (throw e)))
             ys (try (next ys)
-                    (catch Exception e
+                    (catch #?(:clj Exception :cljs js/Error) e
                       (prn :ys i)
                       (throw e)))]
         (recur (inc i) xs ys))
       (if (or xs ys)
         i
         -1))))
-
-(defn same-coll? [a b]
-  (and (= (count a)
-          (count b)
-          (.size ^java.util.Collection a)
-          (.size ^java.util.Collection b))
-       (= a b)
-       (= b a)
-       (= (hash a) (hash b))
-       (= (.hashCode ^Object a) (.hashCode ^Object b))))
 
 (defn check-subvec [init & starts-and-ends]
   (let [v1 (loop [v   (vec (range init))
@@ -216,14 +112,16 @@
                (let [[s e] ses]
                  (recur (fv/subvec v s e) (nnext ses)))
                v))]
-    (same-coll? v1 v2)))
+    (pd/same-coll? v1 v2)))
 
 (defn check-catvec [& counts]
   (let [ranges (map range counts)
         v1 (apply concat ranges)
         v2 (apply fv/catvec (map fv/vec ranges))]
-    (same-coll? v1 v2)))
+    (pd/same-coll? v1 v2)))
 
+;; TBD: Need to make (catch Exception e ...) somehow common for this
+;; cljc file.  Use conditional reader code?
 (defn generative-check-subvec [iterations max-init-cnt slices]
   (dotimes [_ iterations]
     (let [init-cnt (rand-int (inc max-init-cnt))
@@ -232,7 +130,7 @@
       (loop [s&es [s1 e1] cnt (- e1 s1) slices slices]
         (if (or (zero? cnt) (zero? slices))
           (if-not (try (apply check-subvec init-cnt s&es)
-                       (catch Exception e
+                       (catch #?(:clj Exception :cljs js/Error) e
                          (throw
                           (ex-info "check-subvec failure w/ Exception"
                                    {:init-cnt init-cnt :s&es s&es}
@@ -253,7 +151,7 @@
                                 #(+ min-cnt
                                     (rand-int (- (inc max-cnt) min-cnt)))))]
       (if-not (try (apply check-catvec cnts)
-                   (catch Exception e
+                   (catch #?(:clj Exception :cljs js/Error) e
                      (throw
                       (ex-info "check-catvec failure w/ Exception"
                                {:cnts cnts}
@@ -262,35 +160,11 @@
          (ex-info "check-catvec failure w/o Exception" {:cnts cnts})))))
   true)
 
-(defn count-nodes [& vs]
-  (let [m (java.util.IdentityHashMap.)]
-    (doseq [v vs]
-      (let [{:keys [v extract-root extract-shift ^NodeManager nm]}
-            (unwrap-subvec-accessors-for v)]
-        (letfn [(go [n shift]
-                  (when n
-                    (.put m n n)
-                    (if-not (zero? shift)
-                      (let [arr (.array nm n)
-                            ns  (take 32 arr)]
-                        (doseq [n ns]
-                          (go n (- shift 5)))))))]
-          (go (extract-root v) (extract-shift v)))))
-    (.size m)))
-
-
-;; Other invariants/conditions that could be checked:
-
-;; For Clojure's built-in vector, it is probably an invariant that all
-;; elements are "as far left as they can be", for the number of valid
-;; elements.  That is probably true for many RRB vectors, but
-;; definitely not in general.
-
 (defn all-vector-tree-nodes [v]
-  (let [{:keys [v extract-root extract-shift extract-tail ^NodeManager nm]}
-        (unwrap-subvec-accessors-for v)
-        root  (extract-root v)
-        shift (extract-shift v)]
+  (let [{:keys [v get-root get-shift get-array regular?]}
+        (pd/unwrap-subvec-accessors-for v)
+        root  (get-root v)
+        shift (get-shift v)]
     (letfn [(go [depth shift node]
               (if node
                 (if (not= shift 0)
@@ -298,14 +172,14 @@
                    {:depth depth :shift shift :kind :internal :node node}
                    (apply concat
                           (map (partial go (inc depth) (- shift 5))
-                               (let [arr (.array nm node)]
-                                 (if (.regular nm node)
+                               (let [arr (get-array node)]
+                                 (if (regular? node)
                                    arr
                                    (butlast arr))))))
                   (cons {:depth depth :shift shift :kind :internal :node node}
                         (map (fn [x]
                                {:depth (inc depth) :kind :leaf :value x})
-                             (.array nm node))))))]
+                             (get-array node))))))]
       (cons {:depth 0 :kind :base :shift shift :value v}
             (go 1 shift root)))))
 
@@ -321,13 +195,13 @@
 (defn leaves-with-internal-node-type [node-infos]
   (filter (fn [node-info]
             (and (= :leaf (:kind node-info))
-                 (internal-node? (:node node-info))))
+                 (pd/internal-node? (:node node-info))))
           node-infos))
 
 (defn non-leaves-not-internal-node-type [node-infos]
   (filter (fn [node-info]
             (and (= :internal (:kind node-info))
-                 (not (internal-node? (:node node-info)))))
+                 (not (pd/internal-node? (:node node-info)))))
           node-infos))
 
 ;; TBD: The definition of nth in deftype Vector seems to imply that
@@ -336,8 +210,8 @@
 ;; if a non-regular node is found with a regular ancestor in the tree.
 
 (defn basic-node-errors [v]
-  (let [{:keys [v extract-shift]} (unwrap-subvec-accessors-for v)
-        shift (extract-shift v)
+  (let [{:keys [v get-shift]} (pd/unwrap-subvec-accessors-for v)
+        shift (get-shift v)
         nodes (all-vector-tree-nodes v)
         by-kind (group-by :kind nodes)
         leaf-depths (set (map :depth (:leaf by-kind)))
@@ -418,108 +292,30 @@
   be a bug if that happens, and we should be able to detect it
   whenever it occurs."
   [v]
-  (let [{:keys [v ^NodeManager nm]} (unwrap-subvec-accessors-for v)
+  (let [{:keys [v get-array]} (pd/unwrap-subvec-accessors-for v)
         node-maps (all-vector-tree-nodes v)
         internal (filter #(= :internal (:kind %)) node-maps)]
     (keep (fn [node-info]
-            (let [^objects arr (.array nm (:node node-info))
+            ;; TBD: Is there a way to do ^objects type hint for clj,
+            ;; but none for cljs?  Is it harmful for cljs to have such
+            ;; a type hint?
+            ;;(let [^objects arr (get-array (:node node-info))
+            (let [arr (get-array (:node node-info))
                   n (count arr)]
               (if (== n 33)
                 (aget arr 32))))
           internal)))
 
-(defn ranges-not-int-array [x]
-  (seq (remove int-array? (objects-in-slot-32-of-obj-arrays x))))
+;; TBD: Should this function be defined in platform-specific file?
+;;(defn ranges-not-int-array [x]
+;;  (seq (remove int-array? (objects-in-slot-32-of-obj-arrays x))))
 
-(defn atomicref? [x]
-  (instance? AtomicReference x))
 
-(defn thread? [x]
-  (instance? java.lang.Thread x))
-
-(defn non-identical-edit-nodes [v]
-  (let [{:keys [v]} (unwrap-subvec-accessors-for v)
-        node-maps (all-vector-tree-nodes v)
-        ^java.util.IdentityHashMap ihm (java.util.IdentityHashMap.)]
-    (doseq [i node-maps]
-      (when (= :internal (:kind i))
-        (.put ihm (.edit (:node i)) true)))
-    ihm))
-
+;; edit-node-errors is completely defined in platform-specific source
+;; files.  It is simply quite different between clj/cljs.
 (defn edit-nodes-errors [v]
-  (let [{:keys [v extract-root]} (unwrap-subvec-accessors-for v)
-        klass (class v)
-        ^java.util.IdentityHashMap ihm (non-identical-edit-nodes v)
-        objs-maybe-some-nils (.keySet ihm)
-        ;; I do not believe that Clojure's built-in vector types can
-        ;; ever have edit fields equal to nil, but there are some
-        ;; cases where I have seen core.rrb-vector edit fields equal
-        ;; to nil.  As far as I can tell this seems harmless, as long
-        ;; as it is in a persistent vector, not a transient one.
-        objs (remove nil? objs-maybe-some-nils)
-        neither-nil-nor-atomicref (remove atomicref? objs)]
-    (if (seq neither-nil-nor-atomicref)
-      {:error true
-       :description (str "Found edit object with class "
-                         (class (first neither-nil-nor-atomicref))
-                         " - expecting nil or AtomicReference")
-       :data ihm
-       :not-atomic-refs neither-nil-nor-atomicref}
-      (let [refd-objs (map #(.get ^AtomicReference %) objs)
-            non-nils (remove nil? refd-objs)
-            not-threads (remove thread? non-nils)
-            root-edit (.edit (extract-root v))]
-        (cond
-          (seq not-threads)
-          {:error true
-           :description (str "Found edit AtomicReference ref'ing neither nil"
-                             " nor a Thread object")
-           :data ihm}
-          (persistent-vector? v)
-          (if (= (count non-nils) 0)
-            {:error false}
-            {:error true
-             :description (str "Within a persistent (i.e. not transient)"
-                               " vector, found at least one edit"
-                               " AtomicReference object that ref's a Thread"
-                               " object.  Expected all of them to be nil.")
-             :data ihm
-             :val1 (count non-nils)
-             :val2 non-nils})
-          
-          (transient-vector? v)
-          (cond
-            (not= (count non-nils) 1)
-            {:error true
-             :description (str "Within a transient vector, found "
-                               (count non-nils) " edit AtomicReference"
-                               " object(s) that ref's a Thread object."
-                               "  Expected exactly 1.")
-             :data ihm
-             :val1 (count non-nils)
-             :val2 non-nils}
-            (not (atomicref? root-edit))
-            {:error true
-             :description (str "Within a transient vector, found root edit"
-                               " field that was ref'ing an object with class "
-                               (class root-edit)
-                               " - expected AtomicReference.")
-             :data root-edit}
-            (not (thread? (.get ^AtomicReference root-edit)))
-            (let [obj (.get ^AtomicReference root-edit)]
-              {:error true
-               :description (str "Within a transient vector, found root edit"
-                                 " field ref'ing an AtomicReference object,"
-                                 " but that in turn ref'd something with class "
-                                 (class obj)
-                                 " - expected java.lang.Thread.")
-               :data obj})
-            :else {:error false})
+  (pd/edit-nodes-errors v all-vector-tree-nodes))
 
-          :else {:error true
-                 :description (str "Unknown class " klass " for object checked"
-                                   " by edit-nodes-wrong-number-of-threads")
-                 :data v})))))
 
 (defn regular-node-errors [root-node? root-node-cnt children]
   ;; For regular nodes, there should be zero or more 'full' children,
@@ -562,8 +358,8 @@
        :count (reduce + (map #(or (:count %) 0) children))})))
 
 
-(defn non-regular-node-errors [node nm children]
-  (let [rng (ranges nm node)
+(defn non-regular-node-errors [node get-ranges children]
+  (let [rng (get-ranges node)
         [non-nil-children others] (split-with #(not= :nil (:kind %)) children)
         [nil-children others] (split-with #(= :nil (:kind %)) others)
         num-non-nil (count non-nil-children)
@@ -590,7 +386,7 @@
                          " - expected that to match stored ranges: "
                          (seq rng))}
       ;; I believe that there must always be at least one
-      ;; non-nil-children.  By checking for this condition, we will
+      ;; non-nil-child.  By checking for this condition, we will
       ;; definitely find out if it is ever violated.
       ;; TBD: What if we have a tree with ranges, and then remove all
       ;; elements?  Does the resulting tree triger this error?
@@ -604,32 +400,32 @@
 
 
 (defn max-capacity-over-1024 [root-shift]
-  (let [shift-amount (max 0 (- root-shift 10))]
+  (let [shift-amount (max 0 (- root-shift 5))]
     (bit-shift-left 1 shift-amount)))
 
 
 (defn fraction-full [v]
-  (let [{:keys [v extract-shift]} (unwrap-subvec-accessors-for v)
-        root-shift (extract-shift v)
-        tail-off (debug-tailoff v)
+  (let [{:keys [v get-shift]} (pd/unwrap-subvec-accessors-for v)
+        root-shift (get-shift v)
+        tail-off (pd/dbg-tailoff v)
         max-tree-cap (bit-shift-left 1 (+ root-shift 5))]
     (/ (* 1.0 tail-off) max-tree-cap)))
 
 
 (defn ranges-errors [v]
-  (let [{:keys [v extract-root extract-shift extract-tail extract-cnt
-                ^NodeManager nm ^ArrayManager am]}
-        (unwrap-subvec-accessors-for v)
-        root  (extract-root v)
+  (let [{:keys [v get-root get-shift get-tail get-cnt get-array get-ranges
+                regular? tail-len]}
+        (pd/unwrap-subvec-accessors-for v)
+        root  (get-root v)
         root-node-cnt (count v)
-        root-shift (extract-shift v)
-        tail-off (debug-tailoff v)
-        tail (extract-tail v)]
+        root-shift (get-shift v)
+        tail-off (pd/dbg-tailoff v)
+        tail (get-tail v)]
     (letfn [
       (go [shift node]
         (cond
           (nil? node) {:error false :kind :nil}
-          (zero? shift) (let [n (count (.array nm node))]
+          (zero? shift) (let [n (count (get-array node))]
                           (merge {:error (zero? n), :kind :leaves,
                                   :full? (= n 32), :count n}
                                  (if (zero? n)
@@ -638,8 +434,8 @@
                                          "  Expected > 0.")})))
           :else ;; non-0 shift
           (let [children (map (partial go (- shift 5))
-                              (let [arr (.array nm node)]
-                                (if (.regular nm node)
+                              (let [arr (get-array node)]
+                                (if (regular? node)
                                   arr
                                   (butlast arr))))
                 errs (filter :error children)]
@@ -650,9 +446,9 @@
               {:error true, :kind :internal,
                :description (str "Found internal node that has "
                                  (count children) " children - expected 32.")}
-              (.regular nm node) (regular-node-errors (= shift root-shift)
-                                                      root-node-cnt children)
-              :else (non-regular-node-errors node nm children)))))]
+              (regular? node) (regular-node-errors (= shift root-shift)
+                                                   root-node-cnt children)
+              :else (non-regular-node-errors node get-ranges children)))))]
       (let [x (go root-shift root)]
         (cond
           (:error x) x
@@ -661,12 +457,12 @@
            :description (str "Found tail-off=" tail-off " != " (:count x)
                              "=count of values beneath internal nodes")
            :internal-node-leaf-count (:count x) :tail-off tail-off
-           :cnt (extract-cnt v)}
-          (and (transient-vector? v)
-               (not= (.alength am tail) 32))
+           :cnt (get-cnt v)}
+          (and (pd/transient-vector? v)
+               (not= (tail-len tail) 32))
           {:error true, :kind :root,
            :description (str "Found transient vector with tail length "
-                             (.alength am tail) " - expecting 32")}
+                             (tail-len tail) " - expecting 32")}
           ;; It is always a bad thing if shift becomes more than 32,
           ;; because the bit-shift-left and bit-shift-right operations
           ;; on 32-bit ints actually behave like (bit-shift-left
