@@ -43,18 +43,18 @@
 (.setAccessible persistent-core-vec-tailoff-method true)
 
 
-(defn internal-node-type? [obj]
+(defn internal-node? [obj]
   (contains? #{PersistentVector$Node VecNode} (class obj)))
 
-(defn persistent-vector-type? [obj]
+(defn persistent-vector? [obj]
   (contains? #{PersistentVector Vec Vector}
              (class obj)))
 
-(defn transient-vector-type? [obj]
+(defn transient-vector? [obj]
   (contains? #{PersistentVector$TransientVector Transient}
              (class obj)))
 
-(defn vector-type? [obj]
+(defn is-vector? [obj]
   (contains? #{PersistentVector Vec Vector
                PersistentVector$TransientVector Transient}
              (class obj)))
@@ -134,13 +134,19 @@
             :extract-cnt extract-cnt
             :am am})))
 
+(defn abbrev-type-name [klass]
+  (let [cn (.getName klass)
+        d  (.lastIndexOf cn ".")]
+    (subs cn (inc d))))
+
 (defn dbg-vec [v]
-  (let [{:keys [v subvector? subvec-start subvec-end
-                extract-root extract-shift extract-tail ^NodeManager nm]}
+  (let [{:keys [v subvector? subvec-start subvec-end extract-root
+                extract-shift extract-tail extract-cnt ^NodeManager nm]}
         (unwrap-subvec-accessors-for v)
         root  (extract-root v)
         shift (extract-shift v)
-        tail  (extract-tail v)]
+        tail  (extract-tail v)
+        cnt   (extract-cnt v)]
     (when subvector?
       (printf "SubVector from start %d to end %d of vector:\n"
               subvec-start subvec-end))
@@ -148,10 +154,7 @@
               (when node
                 (dotimes [_ indent]
                   (print "  "))
-                (printf "%02d:%02d %s" shift i
-                        (let [cn (.getName (class node))
-                              d  (.lastIndexOf cn ".")]
-                          (subs cn (inc d))))
+                (printf "%02d:%02d %s" shift i (abbrev-type-name (class node)))
                 (if-not (or (zero? shift) (.regular nm node))
                   (print ":" (seq (ranges nm node))))
                 (if (zero? shift)
@@ -164,9 +167,12 @@
                                   (if (.regular nm node)
                                     arr
                                     (butlast arr))))))))]
-      (printf "%s (%d elements):\n" (.getName (class v)) (count v))
+      (printf "%s (%d elements):\n" (abbrev-type-name (class v)) (count v))
       (go 0 shift 0 root)
-      (println "tail:" (vec tail)))))
+      (println (if (transient-vector? v)
+                 (format "tail (tidx %d):" (- cnt (debug-tailoff v)))
+                 "tail:")
+               (vec tail)))))
 
 (defn first-diff [xs ys]
   (loop [i 0 xs (seq xs) ys (seq ys)]
@@ -304,24 +310,24 @@
             (go 1 shift root)))))
 
 ;; All nodes that should be internal nodes are one of the internal
-;; node types satisfying internal-node-type?  All nodes that are less
+;; node types satisfying internal-node?  All nodes that are less
 ;; than "leaf depth" must be internal nodes, and none of the ones
 ;; at "leaf depth" should be.  Probably the most general restriction
 ;; checking for leaf values should be simply that they are any type
 ;; that is _not_ an internal node type.  They could be objects that
-;; return true for vector-type? for example, if a vector is an element
+;; return true for is-vector? for example, if a vector is an element
 ;; of another vector.
 
 (defn leaves-with-internal-node-type [node-infos]
   (filter (fn [node-info]
             (and (= :leaf (:kind node-info))
-                 (internal-node-type? (:node node-info))))
+                 (internal-node? (:node node-info))))
           node-infos))
 
 (defn non-leaves-not-internal-node-type [node-infos]
   (filter (fn [node-info]
             (and (= :internal (:kind node-info))
-                 (not (internal-node-type? (:node node-info)))))
+                 (not (internal-node? (:node node-info)))))
           node-infos))
 
 ;; TBD: The definition of nth in deftype Vector seems to imply that
@@ -335,7 +341,7 @@
         nodes (all-vector-tree-nodes v)
         by-kind (group-by :kind nodes)
         leaf-depths (set (map :depth (:leaf by-kind)))
-        expected-leaf-depth (+ (/ shift 5) 2)
+        expected-leaf-depth (+ (quot shift 5) 2)
         max-internal-node-depth (->> (:internal by-kind)
                                      (map :depth)
                                      (apply max))
@@ -386,16 +392,22 @@
 
       (seq (leaves-with-internal-node-type nodes))
       {:error true
-       :description "A leaf (at max depth) has one of the internal node types, returning true for internal-node-type?"
+       :description "A leaf (at max depth) has one of the internal node types, returning true for internal-node?"
        :data (first (leaves-with-internal-node-type nodes))}
 
       (seq (non-leaves-not-internal-node-type nodes))
       {:error true
-       :description "A non-leaf node has a type that returns false for internal-node-type?"
+       :description "A non-leaf node has a type that returns false for internal-node?"
        :data (first (non-leaves-not-internal-node-type nodes))}
 
       :else
       {:error false})))
+
+;; I believe that objects-in-slot-32-of-obj-arrays and
+;; ranges-not-int-array are only called directly from one test
+;; namespace right now.  Consider making a combined invariant checking
+;; function in this debug namespace that can be used from any test
+;; namespace (or other debug-time code) that a developer wants to.
 
 (defn objects-in-slot-32-of-obj-arrays
   "Function to look for errors of the form where a node's node.array
@@ -463,7 +475,7 @@
            :description (str "Found edit AtomicReference ref'ing neither nil"
                              " nor a Thread object")
            :data ihm}
-          (persistent-vector-type? v)
+          (persistent-vector? v)
           (if (= (count non-nils) 0)
             {:error false}
             {:error true
@@ -475,7 +487,7 @@
              :val1 (count non-nils)
              :val2 non-nils})
           
-          (transient-vector-type? v)
+          (transient-vector? v)
           (cond
             (not= (count non-nils) 1)
             {:error true
@@ -574,7 +586,7 @@
       {:error true, :kind :internal,
        :description (str "Found internal non-regular node with "
                          num-non-nil " non-nil, " num-nil " nil children, and"
-                         " # children prefix sums: " expected-ranges
+                         " # children prefix sums: " (seq expected-ranges)
                          " - expected that to match stored ranges: "
                          (seq rng))}
       ;; I believe that there must always be at least one
@@ -594,6 +606,14 @@
 (defn max-capacity-over-1024 [root-shift]
   (let [shift-amount (max 0 (- root-shift 10))]
     (bit-shift-left 1 shift-amount)))
+
+
+(defn fraction-full [v]
+  (let [{:keys [v extract-shift]} (unwrap-subvec-accessors-for v)
+        root-shift (extract-shift v)
+        tail-off (debug-tailoff v)
+        max-tree-cap (bit-shift-left 1 (+ root-shift 5))]
+    (/ (* 1.0 tail-off) max-tree-cap)))
 
 
 (defn ranges-errors [v]
@@ -642,7 +662,7 @@
                              "=count of values beneath internal nodes")
            :internal-node-leaf-count (:count x) :tail-off tail-off
            :cnt (extract-cnt v)}
-          (and (transient-vector-type? v)
+          (and (transient-vector? v)
                (not= (.alength am tail) 32))
           {:error true, :kind :root,
            :description (str "Found transient vector with tail length "
