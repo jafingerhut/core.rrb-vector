@@ -350,10 +350,29 @@
                           extra-checks)]
       (apply puzzle-b args))))
 
+(defn vstats [v]
+  (str "cnt=" (count v)
+       " shift=" (.-shift v)
+       " %=" (format "%5.1f" (* 100.0 (dv/fraction-full v)))))
+
+(def my-catvec-data (atom []))
+
+(defn my-catvec [& args]
+  (doall (map-indexed (fn [idx v]
+                        (println (str "my-catvec ENTER v" idx "  " (vstats v))))
+                      args))
+  (let [n (count @my-catvec-data)
+        ret (apply fv/catvec args)]
+    (println (str "my-catvec LEAVE ret " (vstats ret)))
+    ;;(swap! my-catvec-data conj {:args args :ret ret})
+    ;;(println "my-catvec RECRD in index" n "of @my-catvec-data")
+    ret))
+
+
 (defn puzzle-b-rrbv-plus-checks [& args]
   (let [extra-checks ret-checks]
     (with-redefs [catvec (wrap-fn-with-ret-checks
-                          fv/catvec "clojure.core.rrb-vector/catvec"
+                          my-catvec "clojure.core.rrb-vector/catvec"
                           extra-checks)
                   subvec (wrap-fn-with-ret-checks
                           fv/subvec "clojure.core.rrb-vector/subvec"
@@ -386,8 +405,8 @@
   (if expect-failures
     (is (thrown-with-msg? ArrayIndexOutOfBoundsException
                           #"^(33|Index 33 out of bounds for length 33)$"
-                          (every? integer? (puzzle-b-rrbv-plus-checks 978))))
-    (is (every? integer? (puzzle-b-rrbv-plus-checks 978)))))
+                          (integer? (puzzle-b-rrbv-plus-checks 978))))
+    (is (integer? (puzzle-b-rrbv-plus-checks 978)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
