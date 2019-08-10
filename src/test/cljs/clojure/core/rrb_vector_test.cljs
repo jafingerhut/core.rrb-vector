@@ -1,72 +1,74 @@
 (ns clojure.core.rrb-vector-test
-  (:require [clojure.core.rrb-vector :as fv]
+  (:require [clojure.test :refer [deftest is]]
+            [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]))
 
-(defn test-slicing []
-  (assert (dv/check-subvec 32000 10 29999 1234 18048 10123 10191)))
+(deftest test-slicing
+  (is (= true (dv/check-subvec 32000 10 29999 1234 18048 10123 10191))))
 
-(defn test-slicing-generative []
-  (try (dv/generative-check-subvec 125 100000 10)
-       (catch ExceptionInfo e
-         (throw (ex-info (dpd/format "%s: %s %s"
-                                     (ex-message e)
-                                     (:init-cnt (ex-data e))
-                                     (:s&es (ex-data e)))
-                         {}
-                         (ex-cause e))))))
+(deftest test-slicing-generative
+  ;; TBD: What does dv/generative-check-subvec return on success?
+  (is (try (dv/generative-check-subvec 125 100000 10)
+           (catch ExceptionInfo e
+             (throw (ex-info (dpd/format "%s: %s %s"
+                                         (ex-message e)
+                                         (:init-cnt (ex-data e))
+                                         (:s&es (ex-data e)))
+                             {}
+                             (ex-cause e)))))))
 
-(defn test-splicing []
-  (assert (dv/check-catvec 1025 1025 3245 1025 32768 1025 1025 10123 1025 1025))
-  (assert (dv/check-catvec 10 40 40 40 40 40 40 40 40))
-  (assert (apply dv/check-catvec (repeat 30 33))))
+(deftest test-splicing
+  (is (= true (dv/check-catvec 1025 1025 3245 1025 32768 1025 1025 10123 1025 1025)))
+  (is (= true (dv/check-catvec 10 40 40 40 40 40 40 40 40)))
+  (is (= true (apply dv/check-catvec (repeat 30 33)))))
 
-(defn test-splicing-generative []
-  (try (dv/generative-check-catvec 125 15 10 30000)
-       (catch ExceptionInfo e
-         (throw (ex-info (dpd/format "%s: %s"
-                                     (.getMessage e)
-                                     (:cnts (ex-data e)))
-                         {}
-                         (.getCause e))))))
+(deftest test-splicing-generative
+  (is (try (dv/generative-check-catvec 125 15 10 30000)
+           (catch ExceptionInfo e
+             (throw (ex-info (dpd/format "%s: %s"
+                                         (.getMessage e)
+                                         (:cnts (ex-data e)))
+                             {}
+                             (.getCause e)))))))
 
-(defn test-reduce []
+(deftest test-reduce
   (let [v1 (vec (range 128))
         v2 (fv/vec (range 128))]
-    (assert (= (reduce + v1) (reduce + v2)))
-    (assert (= (reduce-kv + 0 v1) (reduce-kv + 0 v2)))))
+    (is (= (reduce + v1) (reduce + v2)))
+    (is (= (reduce-kv + 0 v1) (reduce-kv + 0 v2)))))
 
-(defn test-seq []
+(deftest test-seq
   (let [v (fv/vec (range 128))
         s (seq v)]
-    (assert (= v s))
-    (assert (chunked-seq? s))
-    (assert (satisfies? IReduce s))))
+    (is (= v s))
+    (is (chunked-seq? s))
+    (is (satisfies? IReduce s))))
 
-(defn test-assoc []
+(deftest test-assoc
   (let [v1 (fv/vec (range 40000))
         v2 (reduce (fn [out [k v]]
                      (assoc out k v))
                    (assoc v1 40000 :foo)
                    (map-indexed vector (rseq v1)))]
-    (assert (= (concat (rseq v1) [:foo]) v2)))
+    (is (= (concat (rseq v1) [:foo]) v2)))
   (loop [i 1]
     (if (< i 35000)
       (let [v (-> (range 40000)
                   (fv/vec)
                   (fv/subvec i)
                   (assoc 10 :foo))]
-        (assert (= :foo (nth v 10)))
+        (is (= :foo (nth v 10)))
         (recur (* i 32))))))
 
-(defn test-assoc! []
+(deftest test-assoc!
   (let [v1 (fv/vec (range 40000))
         v2 (persistent!
             (reduce (fn [out [k v]]
                       (assoc! out k v))
                     (assoc! (transient v1) 40000 :foo)
                     (map-indexed vector (rseq v1))))]
-    (assert (= (concat (rseq v1) [:foo]) v2)))
+    (is (= (concat (rseq v1) [:foo]) v2)))
   (loop [i 1]
     (if (< i 35000)
       (let [v (-> (range 40000)
@@ -75,32 +77,34 @@
                   (transient)
                   (assoc! 10 :foo)
                   (persistent!))]
-        (assert (= :foo (nth v 10)))
+        (is (= :foo (nth v 10)))
         (recur (* i 32))))))
 
-(defn test-relaxed []
-  (assert (= (into (fv/catvec (vec (range 123)) (vec (range 68))) (range 64))
-             (concat (range 123) (range 68) (range 64))))
-  (assert (= (dpd/slow-into (fv/catvec (vec (range 123)) (vec (range 68)))
-                            (range 64))
-             (concat (range 123) (range 68) (range 64)))))
+(deftest test-relaxed
+  (is (= (into (fv/catvec (vec (range 123)) (vec (range 68))) (range 64))
+         (concat (range 123) (range 68) (range 64))))
+  (is (= (dpd/slow-into (fv/catvec (vec (range 123)) (vec (range 68)))
+                        (range 64))
+         (concat (range 123) (range 68) (range 64)))))
 
-(defn test-splice-high-subtree-branch-count []
+(def test-splice-high-subtree-branch-count
   (let [x        (fv/vec (repeat 1145 \a))
         y        (fv/catvec (fv/subvec x 0 778) (fv/subvec x 778 779) [1] (fv/subvec x 779))
         z        (fv/catvec (fv/subvec y 0 780) [2] (fv/subvec y 780 781) (fv/subvec y 781))
         res      (fv/catvec (fv/subvec z 0 780) [] [3] (fv/subvec z 781))
         expected (concat (repeat 779 \a) [1] [3] (repeat 366 \a))]
-    (assert (= res expected))))
+    (is (= res expected))))
 
-(defn test-reduce-subvec-catvec []
+(deftest test-reduce-subvec-catvec
+  (println "running test-reduce-subvec-catvec")
   (letfn [(insert-by-sub-catvec [v n]
             (fv/catvec (fv/subvec v 0 n) (fv/vec ['x]) (fv/subvec v n)))
           (repeated-subvec-catvec [i]
             (reduce insert-by-sub-catvec (fv/vec (range i)) (range i 0 -1)))]
-    (assert (= (repeated-subvec-catvec 2371) (interleave (range 2371) (repeat 'x))))))
+    (is (= (repeated-subvec-catvec 2371)
+           (interleave (range 2371) (repeat 'x))))))
 
-(defn run-tests []
+#_(defn run-tests []
   (test-slicing)
   (test-slicing-generative)
   (test-splicing)
@@ -114,4 +118,4 @@
   (test-reduce-subvec-catvec)
   (println "Tests completed without exception."))
 
-(run-tests)
+;(run-tests)
