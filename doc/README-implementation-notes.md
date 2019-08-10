@@ -241,3 +241,30 @@ operations:
 
 clojure.lang.RT.cons(Object x, Object coll) does _not_ call the 'cons'
 method, but creates a new Cons object, or a new PersistentList object.
+
+
+
+# Idea for somewhat better post-function call checks
+
+The checks I have that call several functions in the debug namespace,
+that I use with-redefs to create 'wrapped' versions of functions like
+catvec, vector, and pop that check the return value to see if there
+are any problems with them, could be extended to also check whether
+the return value is correct relative to the input parameters of the
+function.  Implementing that should be straightforward, and simply
+requires a well-known argument to tell the wrapper what the correct
+relationship should be.  For example, it could calculate whether
+catvec returns the correct value by comparing `(concat (seq v1) (seq
+v2))` to `(seq ret)`.
+
+For transients, this approach might require ensuring that `seq`, or at
+least some debug-only version of `seq`, works for transient vectors.
+
+It would be nice to figure out a way to let users of core.rrb-vector
+to enable this extra checking, too.
+
+It seems that any atoms or other similar things I use to record sanity
+check failures should be in the debug namespace, so that they can be
+used by requiring the debug namespace only, without having to load any
+test namespace.  Those facilities can be useful even if no test cases
+are being run.
