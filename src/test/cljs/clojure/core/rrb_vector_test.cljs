@@ -96,7 +96,6 @@
     (is (= res expected))))
 
 (deftest test-reduce-subvec-catvec
-  (println "running test-reduce-subvec-catvec")
   (letfn [(insert-by-sub-catvec [v n]
             (fv/catvec (fv/subvec v 0 n) (fv/vec ['x]) (fv/subvec v n)))
           (repeated-subvec-catvec [i]
@@ -104,18 +103,16 @@
     (is (= (repeated-subvec-catvec 2371)
            (interleave (range 2371) (repeat 'x))))))
 
-#_(defn run-tests []
-  (test-slicing)
-  (test-slicing-generative)
-  (test-splicing)
-  (test-splicing-generative)
-  (test-reduce)
-  (test-seq)
-  (test-assoc)
-  (test-assoc!)
-  (test-relaxed)
-  (test-splice-high-subtree-branch-count)
-  (test-reduce-subvec-catvec)
-  (println "Tests completed without exception."))
+(comment
+(require '[clojure.test :as t]
+         '[clojure.core.rrb-vector-test :as ft])
 
-;(run-tests)
+;; To run individual test cases at REPL, just call the deftest name as
+;; if it is a 0-arg function.
+(ft/test-assoc!)
+(ft/test-reduce-subvec-catvec)
+
+;; To run all tests in one namespace, use clojure.test/run-tests on
+;; the namespace name, as a symbol.
+(t/run-tests 'clojure.core.rrb-vector-test)
+)
