@@ -6,7 +6,7 @@
   :jvm {:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
   :test {:extra-paths ["src/test/clojure" "src/test/cljs" "src/test/cljc"]}
   :test-failing {:extra-paths ["src/test_failing/clojure"]}
-  :clj-test {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :clj-test {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
   ;; Using collections-check requires these minimum
   ;; versions of Clojure and test.check
   :check {:extra-paths ["src/test_local/clojure"]

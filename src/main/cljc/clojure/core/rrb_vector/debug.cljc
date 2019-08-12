@@ -11,7 +11,7 @@
 
 
 ;; Functions expected to be defined in the appropriate
-;; .debug-platform-dependent namespace:
+;; clojure.core.rrb-vector.debug-platform-dependent namespace:
 
 ;; pd/internal-node?
 ;; pd/persistent-vector?
@@ -21,7 +21,6 @@
 ;; pd/dbg-tidx (formerly debug-tailoff for clj, debug-tidx for cljs)
 ;; pd/format
 ;; pd/printf
-;; pd/subvector-data
 ;; pd/unwrap-subvec-accessors-for
 ;; pd/abbrev-for-type-of [vec-or-node]   (formerly abbrev-type-name, but move type/class call inside)
 ;; pd/same-coll?   (written already for clj, TBD for cljs)
@@ -98,6 +97,9 @@
       (if (or xs ys)
         i
         -1))))
+
+(defn slow-into [to from]
+  (reduce conj to from))
 
 (defn check-subvec [init & starts-and-ends]
   (let [v1 (loop [v   (vec (range init))
@@ -484,3 +486,42 @@
                              " but the tree contains only "
                              (:count x) " vector elements outside of the tail")}
           :else x)))))
+
+(defn add-return-value-checks [f err-desc-str return-value-check-fn]
+  (fn [& args]
+    (let [ret (apply f args)]
+      (apply return-value-check-fn err-desc-str ret args)
+      ret)))
+
+(def failure-data (atom []))
+
+(defn clear-failure-data! []
+  (reset! failure-data []))
+
+(defn vector-return-value-checks-print-and-record [err-desc-str ret & args]
+  ;;(println "checking ret val from" err-desc-str)
+  (let [i (edit-nodes-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
+                                :args args, :edit-nodes-errors i})))
+  ;; TBD: re-enable these sanity checks, after implementing them
+  ;; similarly for both clj and cljs
+;  (when-let [err (seq (ranges-not-int-array ret))]
+;    (println "ERROR:" err-desc-str "ret has non int-array ranges")
+;    (swap! failure-data conj {:err-desc-str err-desc-str
+;                              :ret ret
+;                              :args args}))
+  (let [i (basic-node-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
+                                :args args, :basic-node-errors i})))
+  (let [i (ranges-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
+                                :args args, :ranges-errors i}))))

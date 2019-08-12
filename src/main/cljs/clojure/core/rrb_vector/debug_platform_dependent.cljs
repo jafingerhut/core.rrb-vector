@@ -97,9 +97,6 @@
        ;;(= (.hashCode ^Object a) (.hashCode ^Object b))
        ))
 
-(defn slow-into [to from]
-  (reduce conj to from))
-
 ;; In ClojureScript, as in JavaScript, there is only 1 thread, so all
 ;; updates to transients are automatically thread confined, to the
 ;; only thread.  There is still an edit field/property on the vector

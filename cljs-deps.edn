@@ -1,14 +1,14 @@
 {:paths ["src/main/cljs" "src/main/cljc"]
  :deps {org.clojure/clojurescript {:mvn/version "1.10.520"}
         ;;org.clojure/clojurescript {:local/root "/Users/jafinger/clj/clojurescript"}
-        }
+        org.clojure/test.check {:mvn/version "0.7.0"}}
  :aliases
  {;; start a Node-based ClojureScript socket REPL on port 50505
   :socket {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,cljs.server.node/repl}"]}
-  :test {:extra-paths ["src/test/cljs"]}
+  :test {:extra-paths ["src/test/cljs" "src/test/cljc"]}
   :cljs-test {:main-opts ["-m" "cljs.main"
                           "-re" "node"
-                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
   ;; I have tried using cljs-test-runner for running clojure.test
   ;; tests in a modified version of core.rrb-vector, but my guess is
   ;; that since an older version of core.rrb-vector (version 0.0.11)
