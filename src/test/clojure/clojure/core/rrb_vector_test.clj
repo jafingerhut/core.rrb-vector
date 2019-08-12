@@ -1,14 +1,13 @@
 (ns clojure.core.rrb-vector-test
-  (:require [clojure.core.rrb-vector :as fv]
+  (:require [clojure.test :refer [deftest testing is are]]
+            [clojure.template :refer [do-template]]
+            [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.reducers :as r]
             [clojure.test.check :as tc]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.generators :as gen])
-  (:use clojure.test
-        clojure.template)
-  (:import (clojure.lang ExceptionInfo)
-           (java.util NoSuchElementException)))
+  (:import (java.util NoSuchElementException)))
 
 (deftest test-iterators
   (let [v (fv/catvec (vec (range 1000)) (vec (range 1000 2048)))]
@@ -50,3 +49,7 @@
                                gen/pos-int)]
             (= (repeated-subvec-catvec cnt)
                (interleave (range cnt) (repeat 'x))))))))
+
+;; See comment block at end of namespace
+;; clojure.core.rrb-vector-common-test for instructions on how to run
+;; selected tests in a REPL session.

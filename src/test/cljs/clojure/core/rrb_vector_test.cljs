@@ -4,16 +4,6 @@
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]))
 
-(comment
-(require '[clojure.test :as t]
-         '[clojure.core.rrb-vector-test :as ft])
-
-;; To run individual test cases at REPL, just call the deftest name as
-;; if it is a 0-arg function.
-(ft/test-assoc!)
-(ft/test-reduce-subvec-catvec)
-
-;; To run all tests in one namespace, use clojure.test/run-tests on
-;; the namespace name, as a symbol.
-(t/run-tests 'clojure.core.rrb-vector-test)
-)
+;; See comment block at end of namespace
+;; clojure.core.rrb-vector-common-test for instructions on how to run
+;; selected tests in a REPL session.

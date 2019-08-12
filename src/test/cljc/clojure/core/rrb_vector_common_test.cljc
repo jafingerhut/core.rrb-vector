@@ -145,3 +145,17 @@
         res      (fv/catvec (fv/subvec z 0 780) [] [3] (fv/subvec z 781))
         expected (concat (repeat 779 \a) [1] [3] (repeat 366 \a))]
     (is (= res expected))))
+
+(comment
+(require '[clojure.test :as t]
+         '[clojure.core.rrb-vector-common-test :as ct])
+
+;; To run individual test cases at REPL, just call the deftest name as
+;; if it is a 0-arg function.
+(ct/test-assoc!)
+(ct/test-reduce-subvec-catvec)
+
+;; To run all tests in one namespace, use clojure.test/run-tests on
+;; the namespace name, as a symbol.
+(t/run-tests 'clojure.core.rrb-vector-common-test)
+)
