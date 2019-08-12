@@ -1,19 +1,22 @@
-{:aliases
- {;; pull in specific versions of Clojure:
-  :1.5 {:override-deps {org.clojure/clojure {:mvn/version "1.5.1"}}}
-  :1.6 {:override-deps {org.clojure/clojure {:mvn/version "1.6.0"}}}
-  :1.7 {:override-deps {org.clojure/clojure {:mvn/version "1.7.0"}}}
-  :1.8 {:override-deps {org.clojure/clojure {:mvn/version "1.8.0"}}}
-  :1.9 {:override-deps {org.clojure/clojure {:mvn/version "1.9.0"}}}
-  :1.10.0 {:override-deps {org.clojure/clojure {:mvn/version "1.10.0"}}}
-  :1.10 {:override-deps {org.clojure/clojure {:mvn/version "1.10.1"}}}
-  :master {:override-deps {org.clojure/clojure {:mvn/version "1.11.0-master-SNAPSHOT"}}}
-
-  :eastwood {:extra-deps {jonase/eastwood {:mvn/version "0.3.5"}}
-             :main-opts ["-m" "eastwood.lint"
-                         "{:source-paths,[\"src/main/clojure\"],:test-paths,[\"src/test/clojure\",\"src/test_local/clojure\"],:add-linters,[:unused-fn-args,:unused-locals,:unused-namespaces,:unused-private-vars],:exclude-linters,[:implicit-dependencies],:exclude-namespaces,[]}"]}
-  ;; - start a Socket REPL on port 50505:
+{:paths ["src/main/clojure" "src/main/cljs" "src/main/cljc"]
+ :deps {org.clojure/test.check {:mvn/version "0.7.0"}}
+ :aliases
+ {;; - start a Clojure/Java Socket REPL on port 50505
   :socket {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,clojure.core.server/repl}"]}
+  :jvm {:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
+  :test {:extra-paths ["src/test/clojure" "src/test/cljs" "src/test/cljc"]}
+  :test-failing {:extra-paths ["src/test_failing/clojure"]}
+  :clj-test {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  ;; Using collections-check requires these minimum
+  ;; versions of Clojure and test.check
+  :check {:extra-paths ["src/test_local/clojure"]
+          :extra-deps {collection-check {:mvn/version "0.1.7"}
+                       org.clojure/clojure {:mvn/version "1.7.0"}
+                       org.clojure/test.check {:mvn/version "0.9.0"}}}
+  :cljol {:extra-deps {cljol {:local/root "/Users/jafinger/clj/cljol"}
+                       org.clojure/clojure {:mvn/version "1.7.0"}}}
+;;  :cljol {:extra-deps {cljol {:git/url "https://github.com/jafingerhut/cljol"
+;;                              :sha "f957e6f5e95544342885e803ead94df91567f0ef"}}}
   :cap {;; recommended options from README of
         ;; https://github.com/clojure-goes-fast/clj-async-profiler
         :jvm-opts ["-Djdk.attach.allowAttachSelf"
@@ -25,18 +28,16 @@
                    "-XX:+DebugNonSafepoints"]
         :extra-deps {com.clojure-goes-fast/clj-async-profiler
                      {:mvn/version "0.4.0"}}}
-  :jvm {:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
-;;  :cljol {:extra-deps {cljol {:git/url "https://github.com/jafingerhut/cljol"
-;;                              :sha "f957e6f5e95544342885e803ead94df91567f0ef"}}}
-  :cljol {:extra-deps {cljol {:local/root "/Users/jafinger/clj/cljol"}
-                       org.clojure/clojure {:mvn/version "1.7.0"}}}
-  :test-failing {:extra-paths ["src/test_failing/clojure"]}
-  ;; Using collections-check requires these minimum
-  ;; versions of Clojure and test.check
-  :check {:extra-deps {collection-check {:mvn/version "0.1.7"}
-                       org.clojure/clojure {:mvn/version "1.7.0"}
-                       org.clojure/test.check {:mvn/version "0.9.0"}}
-          :extra-paths ["src/test_local/clojure"]}
-  }
- :paths ["src/main/clojure" "src/main/cljc" "src/main/cljs" "src/test/clojure"]
- :deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
+  :eastwood {:extra-deps {jonase/eastwood {:mvn/version "0.3.5"}}
+             :main-opts ["-m" "eastwood.lint"
+                         "{:source-paths,[\"src/main/clojure\"],:test-paths,[\"src/test/clojure\",\"src/test_local/clojure\"],:add-linters,[:unused-fn-args,:unused-locals,:unused-namespaces,:unused-private-vars],:exclude-linters,[:implicit-dependencies],:exclude-namespaces,[]}"]}
+
+  ;; pull in specific versions of Clojure:
+  :1.5 {:override-deps {org.clojure/clojure {:mvn/version "1.5.1"}}}
+  :1.6 {:override-deps {org.clojure/clojure {:mvn/version "1.6.0"}}}
+  :1.7 {:override-deps {org.clojure/clojure {:mvn/version "1.7.0"}}}
+  :1.8 {:override-deps {org.clojure/clojure {:mvn/version "1.8.0"}}}
+  :1.9 {:override-deps {org.clojure/clojure {:mvn/version "1.9.0"}}}
+  :1.10.0 {:override-deps {org.clojure/clojure {:mvn/version "1.10.0"}}}
+  :1.10 {:override-deps {org.clojure/clojure {:mvn/version "1.10.1"}}}
+  :master {:override-deps {org.clojure/clojure {:mvn/version "1.11.0-master-SNAPSHOT"}}}}}
