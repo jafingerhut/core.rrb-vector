@@ -9,7 +9,6 @@
   ;; Perhaps only temporary source path for tests that are known to
   ;; fail for Clojure version.  Many of them probably fail for cljs,
   ;; too.
-  :test-failing {:extra-paths ["src/test_failing/clojure"]}
   :clj-test {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
   ;; Using collections-check requires these minimum
   ;; versions of Clojure and test.check
