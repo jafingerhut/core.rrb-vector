@@ -269,23 +269,31 @@
 
 (def benchmark-size 100000)
 
+;; This small variation of the program in the ticket simply does
+;; progress debug printing occasionally, as well as extra debug
+;; checking of the results occasionally.
+
+;; If you enable the printing of the message that begins
+;; with "splice-rrbts result had shift" in function
+;; fallback-to-slow-splice-if-needed, then run this test, you will see
+;; it called hundreds or perhaps thousands of times.  The fallback
+;; approach is effective at avoiding a crash for this scenario, but at
+;; a dramatic extra run-time cost.
+
 (defn vector-push-f [v]
   (loop [v v
          i 0]
-    (when (or (zero? (mod i 10000))
-              (and (> i 99000) (zero? (mod i 100)))
-              (and (> i 99900)))
-      (println "i=" i))
-    (if (< i benchmark-size)
-      (recur (fv/catvec (fv/vector i) v)
-             (inc i))
-      v)))
-
-;; small variation of function above that uses dbg-catvec
-;; occasionally.  It would probably take many hours to get to the
-;; failing point by checking every single one.  The infinite loop does
-;; not happen until very close to iteration 100,000 - - somewhere over
-;; 99,000.
+    (let [check? (or (zero? (mod i 10000))
+                     (and (> i 99000) (zero? (mod i 100)))
+                     (and (> i 99900)))]
+      (when check?
+        (println "i=" i))
+      (if (< i benchmark-size)
+        (recur (if check?
+                 (dv/dbg-catvec (fv/vector i) v)
+                 (fv/catvec (fv/vector i) v))
+               (inc i))
+        v))))
 
 (defn dbg-vector-push-f [v]
   (loop [v v
