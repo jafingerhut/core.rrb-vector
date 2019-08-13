@@ -10,6 +10,43 @@
   #?@(:clj ((:import (clojure.lang ExceptionInfo)))))
 
 
+;; Enable tests to be run on versions of Clojure before 1.10, when
+;; ex-message was added.
+
+#?(:clj
+(defn ex-message-copy
+  "Returns the message attached to ex if ex is a Throwable.
+  Otherwise returns nil."
+  {:added "1.10"}
+  [ex]
+  (when (instance? Throwable ex)
+    (.getMessage ^Throwable ex)))
+:cljs
+(defn ex-message-copy
+  "Returns the message attached to the given Error / ExceptionInfo object.
+  For non-Errors returns nil."
+  [ex]
+  (when (instance? js/Error ex)
+    (.-message ex))))
+
+#?(:clj
+(defn ex-cause-copy
+  "Returns the cause of ex if ex is a Throwable.
+  Otherwise returns nil."
+  {:added "1.10"}
+  [ex]
+  (when (instance? Throwable ex)
+    (.getCause ^Throwable ex)))
+:cljs
+(defn ex-cause-copy
+  "Returns exception cause (an Error / ExceptionInfo) if ex is an
+  ExceptionInfo.
+  Otherwise returns nil."
+  [ex]
+  (when (instance? ExceptionInfo ex)
+    (.-cause ex)))
+)
+
 (def full-debug-opts {
                       ;;:trace true
                       :trace false
@@ -45,11 +82,11 @@
                (dv/generative-check-subvec 125 100000 10))
              (catch ExceptionInfo e
                (throw (ex-info (dpd/format "%s: %s %s"
-                                           (ex-message e)
+                                           (ex-message-copy e)
                                            (:init-cnt (ex-data e))
                                            (:s&es (ex-data e)))
                                {}
-                               (ex-cause e))))))))
+                               (ex-cause-copy e))))))))
 
 (deftest test-splicing
   (println "deftest test-splicing")
@@ -58,7 +95,7 @@
     (is (dv/check-catvec 10 40 40 40 40 40 40 40 40))
     (is (apply dv/check-catvec (repeat 30 33)))))
 
-(deftest test-splicing-generative
+#_(deftest test-splicing-generative
   (println "deftest test-splicing-generative")
   (testing "splicing (generative)"
     (is (try (if longer-generative-tests
@@ -66,10 +103,10 @@
                (dv/generative-check-catvec 125 15 10 30000))
              (catch ExceptionInfo e
                (throw (ex-info (dpd/format "%s: %s"
-                                           (ex-message e)
+                                           (ex-message-copy e)
                                            (:cnts (ex-data e)))
                                {}
-                               (ex-cause e))))))))
+                               (ex-cause-copy e))))))))
 
 (deftest test-reduce
   (println "deftest test-reduce")
