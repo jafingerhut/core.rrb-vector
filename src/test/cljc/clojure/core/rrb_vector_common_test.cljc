@@ -240,6 +240,7 @@
           (partition 2 1 coll)))
 
 (deftest test-crrbv-12
+  (println "deftest test-crrbv-12")
   (let [v (read-string (slurp (io/resource "clojure/core/crrbv-12-data.edn")))]
     (testing "Ascending order after quicksort"
       (is (ascending? (quicksort v)))))
