@@ -588,9 +588,7 @@
   ([f err-desc-str coll x]
    (if-not (pd/is-vector? coll)
      (f coll x)
-     (let [_ (println "called validating-conj! with (type coll)=" (type coll)
-                      "x=" x)
-           coll-seq (copying-seq coll)
+     (let [coll-seq (copying-seq coll)
            exp-ret-seq (concat coll-seq (list x))
            ret (f coll x)
            ret-seq (copying-seq ret)]
@@ -759,8 +757,7 @@
                             :args args, :ranges-errors i}))))
 
 (defn validating-pop [f err-desc-str coll]
-  (let [_ (println "called validating-pop #=" (count coll))
-        coll-seq (copying-seq coll)
+  (let [coll-seq (copying-seq coll)
         exp-ret-seq (butlast coll-seq)
         ret (f coll)
         ret-seq (copying-seq ret)]
@@ -788,8 +785,7 @@
         ret))))
 
 (defn validating-pop! [f err-desc-str coll]
-  (let [_ (println "called validating-pop! #=" (count coll))
-        coll-seq (copying-seq coll)
+  (let [coll-seq (copying-seq coll)
         exp-ret-seq (butlast coll-seq)
         ret (f coll)
         ret-seq (copying-seq ret)]
@@ -817,8 +813,7 @@
         ret))))
 
 (defn validating-transient [f err-desc-str coll]
-  (let [_ (println "called validating-transient #=" (count coll))
-        coll-seq (copying-seq coll)
+  (let [coll-seq (copying-seq coll)
         exp-ret-seq coll-seq
         ret (f coll)
         ret-seq (copying-seq ret)]
@@ -859,7 +854,6 @@
 
 (defn validating-splice-rrbts #?(:clj [err-desc-str nm am v1 v2]
                                  :cljs [err-desc-str v1 v2])
-  ;;(println "validating-splice-rrbts called")
   (let [orig-fn clojure.core.rrb-vector.rrbt/splice-rrbts
         v1-seq (copying-seq v1)
         v2-seq (copying-seq v2)
