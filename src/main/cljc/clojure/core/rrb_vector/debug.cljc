@@ -1,5 +1,6 @@
 (ns clojure.core.rrb-vector.debug
-  (:require clojure.core.rrb-vector.rrbt
+  (:require [clojure.core.rrb-vector.rrbt
+             :refer [#?(:clj as-rrbt :cljs -as-rrbt)]]
             [clojure.core.rrb-vector :as fv]
             ;; This page:
             ;; https://clojure.org/guides/reader_conditionals refers
@@ -78,7 +79,6 @@
                  "tail:")
                (vec tail)))))
 
-;; TBD: Needs a little reader conditional magic for catch Exception
 (defn first-diff [xs ys]
   (loop [i 0 xs (seq xs) ys (seq ys)]
     (if (try (and xs ys (= (first xs) (first ys)))
@@ -100,67 +100,6 @@
 
 (defn slow-into [to from]
   (reduce conj to from))
-
-(defn check-subvec [init & starts-and-ends]
-  (let [v1 (loop [v   (vec (range init))
-                  ses (seq starts-and-ends)]
-             (if ses
-               (let [[s e] ses]
-                 (recur (subvec v s e) (nnext ses)))
-               v))
-        v2 (loop [v   (fv/vec (range init))
-                  ses (seq starts-and-ends)]
-             (if ses
-               (let [[s e] ses]
-                 (recur (fv/subvec v s e) (nnext ses)))
-               v))]
-    (pd/same-coll? v1 v2)))
-
-(defn check-catvec [& counts]
-  (let [ranges (map range counts)
-        v1 (apply concat ranges)
-        v2 (apply fv/catvec (map fv/vec ranges))]
-    (pd/same-coll? v1 v2)))
-
-;; TBD: Need to make (catch Exception e ...) somehow common for this
-;; cljc file.  Use conditional reader code?
-(defn generative-check-subvec [iterations max-init-cnt slices]
-  (dotimes [_ iterations]
-    (let [init-cnt (rand-int (inc max-init-cnt))
-          s1       (rand-int init-cnt)
-          e1       (+ s1 (rand-int (- init-cnt s1)))]
-      (loop [s&es [s1 e1] cnt (- e1 s1) slices slices]
-        (if (or (zero? cnt) (zero? slices))
-          (if-not (try (apply check-subvec init-cnt s&es)
-                       (catch #?(:clj Exception :cljs js/Error) e
-                         (throw
-                          (ex-info "check-subvec failure w/ Exception"
-                                   {:init-cnt init-cnt :s&es s&es}
-                                   e))))
-            (throw
-             (ex-info "check-subvec failure w/o Exception"
-                      {:init-cnt init-cnt :s&es s&es})))
-          (let [s (rand-int cnt)
-                e (+ s (rand-int (- cnt s)))
-                c (- e s)]
-            (recur (conj s&es s e) c (dec slices)))))))
-  true)
-
-(defn generative-check-catvec [iterations max-vcnt min-cnt max-cnt]
-  (dotimes [_ iterations]
-    (let [vcnt (inc (rand-int (dec max-vcnt)))
-          cnts (vec (repeatedly vcnt
-                                #(+ min-cnt
-                                    (rand-int (- (inc max-cnt) min-cnt)))))]
-      (if-not (try (apply check-catvec cnts)
-                   (catch #?(:clj Exception :cljs js/Error) e
-                     (throw
-                      (ex-info "check-catvec failure w/ Exception"
-                               {:cnts cnts}
-                               e))))
-        (throw
-         (ex-info "check-catvec failure w/o Exception" {:cnts cnts})))))
-  true)
 
 (defn all-vector-tree-nodes [v]
   (let [{:keys [v get-root get-shift get-array regular?]}
@@ -313,7 +252,7 @@
 ;;  (seq (remove int-array? (objects-in-slot-32-of-obj-arrays x))))
 
 
-;; edit-node-errors is completely defined in platform-specific source
+;; edit-nodes-errors is completely defined in platform-specific source
 ;; files.  It is simply quite different between clj/cljs.
 (defn edit-nodes-errors [v]
   (pd/edit-nodes-errors v all-vector-tree-nodes))
@@ -493,10 +432,282 @@
       (apply return-value-check-fn err-desc-str ret args)
       ret)))
 
+(defn copying-seq [v]
+  (let [{:keys [v subvector? subvec-start subvec-end
+                get-root get-shift get-tail get-array regular?]}
+        (pd/unwrap-subvec-accessors-for v)
+        root  (get-root v)
+        shift (get-shift v)]
+    (letfn [(go [shift node]
+              (if node
+                (if (not= shift 0)
+                  (apply concat
+                         (map (partial go (- shift 5))
+                              (let [arr (get-array node)]
+                                (if (regular? node)
+                                  arr
+                                  (butlast arr)))))
+                  (seq (get-array node)))))]
+      (doall  ;; always return a fully realized sequence.
+       (let [all-elems (concat (go shift root)
+                               (if (pd/transient-vector? v)
+                                 (take (pd/dbg-tidx v) (get-tail v))
+                                 (seq (get-tail v))))]
+         (if subvector?
+           (take (- subvec-end subvec-start) (drop subvec-start all-elems))
+           all-elems))))))
+
+
+;; functions to check:
+
+;; conj - clj arities [] [coll] [coll x] [coll x & xs]
+;; conj! - clj arities [] [coll] [coll x]
+;; pop - clj arities [coll]
+;; pop! - clj arities [coll]
+;; assoc - clj arities [coll key val] [coll key val & kvs]
+;; assoc! - clj arities [coll key val] [coll key val & kvs]
+;; nth - persistent or transient
+;;     - clj arities [coll index] [coll index not-found]
+;; N/A dissoc! - clj not supported on vectors
+
+;; note that if we wrap conj! transient persistent! and conj, but not
+;; into, then into will in clj be direct-linked to unwrapped version
+;; of those other functions, and will thus _not_ be checked.
+
+;; peek - persistent only.  clj arities [coll]
+;; 
+;; catvec (persistent only) - clj arities [] [v1] [v1 v2] [v1 v2 & vn]
+;; vector (persistent only) - clj arities [] [a] [a b] [a b & args] (same for fv/vector)
+;; vec (persistent only) - clj arities [coll] (same for fv/vec)
+;; vector-of -- persistent only, clj only, for primitive vectors  - same arities as vector, except first arg required and must be type
+
+;; seq - persistent only clj arities [coll]
+;; rseq - persistent only? clj arities [coll]
+;; subvec - clj arities [v start] [v start end]  (uses slicev in rrbt)
+
+;; It seems like a good idea to use the same data to describe this as
+;; used by collection-check:
+
+;; [:transient]
+;; [:persistent!]
+;; [:assoc idx val]
+;; [:assoc! idx val]
+;; [:pop]
+;; [:pop!]
+;; [:conj val]
+;; [:conj! val]
+
+;; [:seq] - vector->seq
+;; [:rest] - only after [:seq] I believe, from collection-check at least
+;; [into] - seq->vector
+
+
 (def failure-data (atom []))
 
 (defn clear-failure-data! []
   (reset! failure-data []))
+
+(let [orig-conj clojure.core/conj]
+  (defn record-failure-data [d]
+    (swap! failure-data orig-conj d)))
+
+(defn conj-err-check [call-desc-str args ret coll-seq ret-seq exp-ret-seq
+                      err-desc-str]
+  (when (not= ret-seq exp-ret-seq)
+    (println (str "ERROR: " call-desc-str " returned incorrect value"))
+    ;; TBD: error msg should include details of how the two
+    ;; sequences are different, e.g. first-diff, lengths, how many
+    ;; elements differ between the two, etc.
+    (record-failure-data {:err-desc-str err-desc-str, :ret ret, :args args,
+                          :coll-seq coll-seq, :ret-seq ret-seq,
+                          :exp-ret-seq exp-ret-seq})))
+
+(defn conj-validator [f err-desc-str]
+  (fn validating-conj
+    ([]
+     (let [coll-seq nil
+           exp-ret-seq (list)
+           ret (f)
+           ret-seq (copying-seq ret)]
+       (conj-err-check "(conj)" (list)
+                       ret coll-seq ret-seq exp-ret-seq err-desc-str)
+       ret))
+    ([coll]
+     (println "validating-conj called with (type coll)=" (type coll) " no x")
+     (let [coll-seq (copying-seq coll)
+           exp-ret-seq coll-seq
+           ret (f coll)
+           ret-seq (copying-seq ret)]
+       (conj-err-check "(conj coll)" (list coll)
+                       ret coll-seq ret-seq exp-ret-seq err-desc-str)
+       ret))
+    ([coll x]
+     (println "validating-conj called with (type coll)=" (type coll) "x=" x)
+     (if-not (pd/is-vector? coll)
+       (f coll x)
+       (let [_ (println "validating-conj called with (type coll)=" (type coll) "x=" x)
+             coll-seq (copying-seq coll)
+             exp-ret-seq (concat coll-seq (list x))
+             ret (f coll x)
+             ret-seq (copying-seq ret)]
+         (conj-err-check "(conj coll x)" (list coll x)
+                         ret coll-seq ret-seq exp-ret-seq err-desc-str)
+         ret)))
+    ([coll x & xs]
+     (println "validating-conj called with (type coll)=" (type coll) "x=" x
+              "xs=" (seq xs))
+     (if-not (pd/is-vector? coll)
+       (apply f coll x xs)
+       (let [_ (println "validating-conj called with (type coll)=" (type coll)
+                        "x=" x)
+             coll-seq (copying-seq coll)
+             exp-ret-seq (concat coll-seq (cons x xs))
+             ret (apply f coll x xs)
+             ret-seq (copying-seq ret)]
+         (conj-err-check "(conj coll x & xs)" (concat (list coll x) xs)
+                         ret coll-seq ret-seq exp-ret-seq err-desc-str)
+         ret)))))
+
+(defn conj!-validator [f err-desc-str]
+  (fn validating-conj!
+    ([]
+     (let [coll-seq nil
+           exp-ret-seq (list)
+           ret (f)
+           ret-seq (copying-seq ret)]
+       (conj-err-check "(conj!)" (list)
+                       ret coll-seq ret-seq exp-ret-seq err-desc-str)
+       ret))
+    ([coll]
+     (let [coll-seq (copying-seq coll)
+           exp-ret-seq coll-seq
+           ret (f coll)
+           ret-seq (copying-seq ret)]
+       (conj-err-check "(conj! coll)" (list coll)
+                       ret coll-seq ret-seq exp-ret-seq err-desc-str)
+       ret))
+    ([coll x]
+     (if-not (pd/is-vector? coll)
+       (f coll x)
+       (let [_ (println "called validating-conj! with (type coll)=" (type coll)
+                        "x=" x)
+             coll-seq (copying-seq coll)
+             exp-ret-seq (concat coll-seq (list x))
+             ret (f coll x)
+             ret-seq (copying-seq ret)]
+         (conj-err-check "(conj! coll x)" (list coll x)
+                         ret coll-seq ret-seq exp-ret-seq err-desc-str)
+         ret)))))
+
+(defn pop-validator [f err-desc-str]
+  (fn validating-pop [coll]
+     (if-not (pd/is-vector? coll)
+       (f coll)
+       (let [_ (println "called validating-pop #=" (count coll))
+             coll-seq (copying-seq coll)
+             exp-ret-seq (butlast coll-seq)
+             ret (f coll)
+             ret-seq (copying-seq ret)]
+         (when (not= ret-seq exp-ret-seq)
+           (println "ERROR: (pop coll) returned incorrect value")
+           (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                                 :args (list coll),
+                                 :coll-seq coll-seq, :ret-seq ret-seq,
+                                 :exp-ret-seq exp-ret-seq}))
+         ret))))
+
+(defn pop!-validator [f err-desc-str]
+  (fn validating-pop! [coll]
+    (if-not (pd/is-vector? coll)
+      (f coll)
+      (let [_ (println "called validating-pop! #=" (count coll))
+            coll-seq (copying-seq coll)
+            exp-ret-seq (butlast coll-seq)
+            ret (f coll)
+            ret-seq (copying-seq ret)]
+        (when (not= ret-seq exp-ret-seq)
+          (println "ERROR: (pop! coll) returned incorrect value")
+          (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                                :args (list coll),
+                                :coll-seq coll-seq, :ret-seq ret-seq,
+                                :exp-ret-seq exp-ret-seq}))
+        ret))))
+
+;; This works fine for Clojure, but goes into infinite loop on
+;; validating-conj for ClojureScript, and probably other functions.
+#_(defn call-in-vector-validator-env [f]
+  (with-redefs
+    [clojure.core/conj (conj-validator clojure.core/conj "conj-validator")
+     clojure.core/conj! (conj!-validator clojure.core/conj! "conj!-validator")
+     clojure.core/pop (pop-validator clojure.core/pop "clojure.core/pop ")
+     clojure.core/pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
+
+     #?(:clj clojure.core.rrb-vector.protocols/slicev
+        :cljs clojure.core.rrb-vector.protocols/-slicev)
+     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
+                          :cljs clojure.core.rrb-vector.protocols/-slicev)
+                       "clojure.core.rrb-vector.protocols/slicev")
+
+     clojure.core.rrb-vector.rrbt/splice-rrbts
+     (splice-rrbts-validator
+      clojure.core.rrb-vector.rrbt/splice-rrbts
+      "clojure.core.rrb-vector.rrbt/splice-rrbts")
+
+     clojure.core.rrb-vector/catvec
+     (catvec-validator clojure.core.rrb-vector/catvec
+                       "clojure.core.rrb-vector/catvec")]
+    (f)))
+
+#_(def dbg-conj clojure.core/conj)
+#_(def dbg-conj! clojure.core/conj!)
+#_(def dbg-pop clojure.core/pop)
+#_(def dbg-pop! clojure.core/pop!)
+#_(def dbg-splice-rrbts clojure.core.rrb-vector.rrbt/splice-rrbts)
+
+#_(defn call-in-vector-validator-env2 [f]
+  (with-redefs
+    [dbg-conj (conj-validator clojure.core/conj "conj-validator")
+     dbg-conj! (conj!-validator clojure.core/conj! "conj!-validator")
+     dbg-pop (pop-validator clojure.core/pop "clojure.core/pop ")
+     dbg-pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
+
+     dbg-slicev
+     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
+                          :cljs clojure.core.rrb-vector.protocols/-slicev)
+                       "clojure.core.rrb-vector.protocols/slicev")
+
+     dbg-splice-rrbts
+     (splice-rrbts-validator
+      clojure.core.rrb-vector.rrbt/splice-rrbts
+      "clojure.core.rrb-vector.rrbt/splice-rrbts")
+
+     dbg-catvec
+     (catvec-validator clojure.core.rrb-vector/catvec
+                       "clojure.core.rrb-vector/catvec")]
+    (f)))
+
+#_(defn call-in-vector-validator-env3 [f]
+  (with-redefs
+    [dbg-conj (conj-validator clojure.core/conj "conj-validator")
+     dbg-conj! (conj!-validator clojure.core/conj! "conj!-validator")
+     dbg-pop (pop-validator clojure.core/pop "clojure.core/pop ")
+     dbg-pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
+
+     #?(:clj clojure.core.rrb-vector.protocols/slicev
+        :cljs clojure.core.rrb-vector.protocols/-slicev)
+     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
+                          :cljs clojure.core.rrb-vector.protocols/-slicev)
+                       "clojure.core.rrb-vector.protocols/slicev")
+
+     clojure.core.rrb-vector.rrbt/splice-rrbts
+     (splice-rrbts-validator
+      clojure.core.rrb-vector.rrbt/splice-rrbts
+      "clojure.core.rrb-vector.rrbt/splice-rrbts")
+
+     clojure.core.rrb-vector/catvec
+     (catvec-validator clojure.core.rrb-vector/catvec
+                       "clojure.core.rrb-vector/catvec")]
+    (f)))
 
 (defn vector-return-value-checks-print-and-record [err-desc-str ret & args]
   ;;(println "checking ret val from" err-desc-str)
@@ -504,24 +715,351 @@
     (when (:error i)
       (println (str "ERROR: found problem with ret value from " err-desc-str
                     ": " (:description i)))
-      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
-                                :args args, :edit-nodes-errors i})))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :edit-nodes-errors i})))
   ;; TBD: re-enable these sanity checks, after implementing them
   ;; similarly for both clj and cljs
 ;  (when-let [err (seq (ranges-not-int-array ret))]
 ;    (println "ERROR:" err-desc-str "ret has non int-array ranges")
-;    (swap! failure-data conj {:err-desc-str err-desc-str
-;                              :ret ret
-;                              :args args}))
+;    (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+;                          :args args}))
   (let [i (basic-node-errors ret)]
     (when (:error i)
       (println (str "ERROR: found problem with ret value from " err-desc-str
                     ": " (:description i)))
-      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
-                                :args args, :basic-node-errors i})))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :basic-node-errors i})))
   (let [i (ranges-errors ret)]
     (when (:error i)
       (println (str "ERROR: found problem with ret value from " err-desc-str
                     ": " (:description i)))
-      (swap! failure-data conj {:err-desc-str err-desc-str, :ret ret,
-                                :args args, :ranges-errors i}))))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :ranges-errors i}))))
+
+;; I would like to achieve a goal of providing an easy-to-use way that
+;; a Clojure or ClojureScript developer could call a function, or
+;; invoke their own code in a macro, and then within the run-time
+;; scope of that, a selected set of calls to functions like conj,
+;; conj!, pop, pop!, transient, subvec, slicev, catvec, splicev, and
+;; perhaps others, would have extra checks enabled, such that if they
+;; detected a bug, they would stop the execution immediately with a
+;; lot of debug information recorded as near to the point of the
+;; failure as can be achieved by checking the return values of such
+;; function calls.
+
+;; It would also be good if this goal could be achieved without having
+;; a separate implementation of all of those functions, and/or custom
+;; versions of Clojure, ClojureScript, or the core.rrb-vector library
+;; to use.  Actually a separate implementation of core.rrb-vector
+;; might be acceptable and reasonable to implement and maintain, but
+;; separate versions of Clojure and ClojureScript seems like too much
+;; effort for the benefits achieved.
+
+;; I have investigated approaches that attempt to use with-redefs on
+;; the 'original Vars' in Clojure, and also in a ClojureScript
+;; Node-based REPL.
+
+;; There are differences between with-redefs behavior on functions in
+;; clojure.core between Clojure and ClojureScript, because
+;; direct-linking seems to also include user code calling to
+;; clojure.core functions with ClojureScript:
+;; https://clojure.atlassian.net/projects/CLJS/issues/CLJS-3154
+
+;; At least in Clojure, and perhaps also in ClojureScript, there is
+;; sometimes an effect similar to direct linking involved when calling
+;; protocol methods on objects defined via deftype.  That prevents
+;; with-redefs, and any technique that changes the definition of a Var
+;; with alter-var-root! or set!, from causing the alternate function
+;; to be called.
+
+;; Here are the code paths that I think are most useful for debug
+;; checks of operations on vectors.
+
+;; Functions in clojure.core:
+
+;; Lower value, because they are simpler functions, and in particular
+;; do not operate on RRB vector trees with ranges inside:
+;; vec vector vector-of
+
+;; Similarly the RRB vector variants of those functions create regular
+;; RRB vectors, so not as likely to have bugs.
+
+;; peek can operate on trees with ranges inside, but always accesses
+;; the tail, so not nearly as likely to have bugs.
+
+;; Higher value, because they can operate on RRB vectors with ranges
+;; inside the tree:
+
+;; conj pop assoc
+;; conj! pop! assoc!
+;; transient persistent!
+;; seq rseq
+
+;; Functions in clojure.core.rrb-vector namespace, and internal
+;; implementation functions/protocol-methods that they use:
+
+;; defn fv/catvec
+;;   calls itself recursively for many args (clj and cljs versions)
+;;   -splicev protocol function (splicev for clj)
+;;     When -splicev is called on PersistentVector or Subvec, -as-rrbt
+;;       converts it to Vector, then method below is called.
+;;     deftype Vector -splicev / splicev method
+;;       -as-rrbt (cljs) / as-rrbt (clj)
+;;         -slicev (cljs) / slicev (clj) if used on a subvector object
+;;       defn splice-rrbts
+;;         Calls many internal implementation detail functions.
+
+;; defn fv/subvec
+;;   -slicev (cljs) / slicev (clj) protocol function
+;;     deftype Vector -slicev method
+;;       Calls many internal implementation detail functions,
+;;       e.g. slice-left slice-right make-array array-copy etc.
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Supported keys of @debug-opts:
+
+;; :catvec used by dbg-catvec
+;; :splicev used by dbg-splicev
+;; tbd for other dbg-* functions
+
+;; The value associated with each key is a submap that may have the
+;; following keys.
+
+;; :trace - logical true to enable some debug printing when dbg-*
+;; function is called.
+
+;; :validate - logical true to enable checking of a return value
+;; against the expected return value, independently calculated via
+;; operations on sequences.
+
+;; :return-value-checks - a sequence of functions to perform
+;; additional checks on the return value, e.g.
+
+;; edit-nodes-error-checks
+;; basic-node-error-checks
+;; ranges-error-checks
+
+;; See those functions for the arguments the function is called with.
+
+(def debug-opts (atom {}))
+
+(defn edit-nodes-error-checks [err-desc-str ret & args]
+  (let [i (edit-nodes-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :edit-nodes-errors i}))))
+
+(defn basic-node-error-checks [err-desc-str ret & args]
+  (let [i (basic-node-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :basic-node-errors i}))))
+
+(defn ranges-error-checks [err-desc-str ret & args]
+  (let [i (ranges-errors ret)]
+    (when (:error i)
+      (println (str "ERROR: found problem with ret value from " err-desc-str
+                    ": " (:description i)))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :ranges-errors i}))))
+
+;; Note: One possible advantage to having a validator for splice-rrbts
+;; is that fv/catvec can call splice-rrbts multiple times, any one of
+;; which can have an error in its return value, so wrapping validation
+;; around splice-rrbts should be able to catch any errors closer to
+;; the source of the problem.
+
+;; The only disadvantage I can think of is that it will be slower if
+;; there are many catvec calls on 3 or more vectors, since
+;; splice-rrbts will be called once for every pair of vectors, then in
+;; a lg(N) depth tree of calls on intermediate results.
+
+(defn validating-splice-rrbts #?(:clj [err-desc-str nm am v1 v2]
+                                 :cljs [err-desc-str v1 v2])
+  ;;(println "validating-splice-rrbts called")
+  (let [orig-fn clojure.core.rrb-vector.rrbt/splice-rrbts
+        v1-seq (copying-seq v1)
+        v2-seq (copying-seq v2)
+        exp-ret-seq (concat v1-seq v2-seq)
+        ret #?(:clj (orig-fn nm am v1 v2)
+               :cljs (orig-fn v1 v2))
+        ret-seq (copying-seq ret)]
+    (when (not= ret-seq exp-ret-seq)
+      (println "ERROR: splice-rrbts returned incorrect value")
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args #?(:clj (list nm am v1 v2)
+                                     :cljs (list v1 v2)),
+                            :v1-seq v1-seq, :v2-seq v2-seq, :ret-seq ret-seq,
+                            :exp-ret-seq exp-ret-seq}))
+    ret))
+
+(defn dbg-splice-rrbts [& args]
+  (let [opts (get @debug-opts :splice-rrbts)
+        err-desc-str "splice-rrbts"]
+    (when (:trace opts)
+      (let [#?(:clj [_ _ v1 v2]
+               :cljs [v1 v2]) args]
+        (println "dbg-splice-rrbts called with #v1=" (count v1)
+                 "#v2=" (count v2)
+                 "(type v1)=" (type v1)
+                 "(type v2)=" (type v2))))
+    (let [ret (if (:validate opts)
+                (apply validating-splice-rrbts err-desc-str args)
+                (apply clojure.core.rrb-vector.rrbt/splice-rrbts args))]
+      (doseq [check-fn (:return-value-checks opts)]
+        (apply check-fn err-desc-str ret args))
+      ret)))
+
+(defn dbg-splicev [v1 v2]
+  (let [rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v1)]
+    (dbg-splice-rrbts #?@(:clj ((.-nm rv1) (.-am rv1)))
+                      rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v2))))
+
+(defn dbg-catvec-impl
+  ([]
+     [])
+  ([v1]
+     v1)
+  ([v1 v2]
+     (dbg-splicev v1 v2))
+  ([v1 v2 v3]
+     (dbg-splicev (dbg-splicev v1 v2) v3))
+  ([v1 v2 v3 v4]
+     (dbg-splicev (dbg-splicev v1 v2) (dbg-splicev v3 v4)))
+  ([v1 v2 v3 v4 & vn]
+     (dbg-splicev (dbg-splicev (dbg-splicev v1 v2) (dbg-splicev v3 v4))
+                  (apply dbg-catvec-impl vn))))
+
+(defn validating-catvec [err-desc-str & vs]
+  (let [orig-fn dbg-catvec-impl  ;; clojure.core.rrb-vector/catvec
+        vs-seqs (doall (map copying-seq vs))
+        exp-ret-seq (apply concat vs-seqs)
+        ret (apply orig-fn vs)
+        ret-seq (copying-seq ret)]
+    (when (not= ret-seq exp-ret-seq)
+      (println "ERROR: catvec returned incorrect value")
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret, :args vs,
+                            :vs-seqs vs-seqs, :ret-seq ret-seq,
+                            :exp-ret-seq exp-ret-seq}))
+    ret))
+
+(defn dbg-catvec [& args]
+  (let [opts (get @debug-opts :catvec)
+        err-desc-str "catvec"]
+    (when (:trace opts)
+      (println "dbg-catvec called with" (count args) "args:")
+      (dorun (map-indexed (fn [idx v]
+                            (println "    arg" (inc idx) " count=" (count v)
+                                     "type=" (type v)))
+                          args)))
+    (let [ret (if (:validate opts)
+                (apply validating-catvec err-desc-str args)
+                (apply dbg-catvec-impl ;; clojure.core.rrb-vector/catvec
+                       args))]
+      (doseq [check-fn (:return-value-checks opts)]
+        (apply check-fn err-desc-str ret args))
+      ret)))
+
+(defn validating-slicev
+  ([err-desc-str coll start]
+   (validating-slicev err-desc-str coll start (count coll)))
+  ([err-desc-str coll start end]
+   (let [coll-seq (copying-seq coll)
+         exp-ret-seq (take (- end start) (drop start coll-seq))
+         ret (#?(:clj clojure.core.rrb-vector.protocols/slicev
+                 :cljs clojure.core.rrb-vector.protocols/-slicev)
+              coll start end)
+         ret-seq (copying-seq ret)]
+     (when (not= ret-seq exp-ret-seq)
+       (println "ERROR: (slicev coll start end) returned incorrect value")
+       (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                             :args (list coll start end),
+                             :coll-seq coll-seq, :ret-seq ret-seq,
+                             :exp-ret-seq exp-ret-seq}))
+     ret)))
+
+(defn dbg-slicev [& args]
+  (let [opts (get @debug-opts :slicev)
+        err-desc-str "slicev"]
+    (when (:trace opts)
+      (let [[v start end] args]
+        (println "dbg-slicev #v=" (count v) "start=" start "end=" end
+                 "type=" (type v))))
+    (let [ret (if (:validate opts)
+                (apply validating-slicev err-desc-str args)
+                (apply #?(:clj clojure.core.rrb-vector.protocols/slicev
+                          :cljs clojure.core.rrb-vector.protocols/-slicev)
+                       args))]
+      (doseq [check-fn (:return-value-checks opts)]
+        (apply check-fn err-desc-str ret args))
+      ret)))
+
+(defn dbg-subvec
+  ([v start]
+   (dbg-slicev v start (count v)))
+  ([v start end]
+   (dbg-slicev v start end)))
+
+(defn check-subvec [init & starts-and-ends]
+  (let [v1 (loop [v   (vec (range init))
+                  ses (seq starts-and-ends)]
+             (if ses
+               (let [[s e] ses]
+                 (recur (dbg-subvec v s e) (nnext ses)))
+               v))
+        v2 (loop [v   (fv/vec (range init))
+                  ses (seq starts-and-ends)]
+             (if ses
+               (let [[s e] ses]
+                 (recur (dbg-subvec v s e) (nnext ses)))
+               v))]
+    (pd/same-coll? v1 v2)))
+
+(defn check-catvec [& counts]
+  (let [ranges (map range counts)
+        v1 (apply concat ranges)
+        v2 (apply dbg-catvec (map fv/vec ranges))]
+    (pd/same-coll? v1 v2)))
+
+(defn generative-check-subvec [iterations max-init-cnt slices]
+  (dotimes [_ iterations]
+    (let [init-cnt (rand-int (inc max-init-cnt))
+          s1       (rand-int init-cnt)
+          e1       (+ s1 (rand-int (- init-cnt s1)))]
+      (loop [s&es [s1 e1] cnt (- e1 s1) slices slices]
+        (if (or (zero? cnt) (zero? slices))
+          (if-not (try (apply check-subvec init-cnt s&es)
+                       (catch #?(:clj Exception :cljs js/Error) e
+                         (throw
+                          (ex-info "check-subvec failure w/ Exception"
+                                   {:init-cnt init-cnt :s&es s&es}
+                                   e))))
+            (throw
+             (ex-info "check-subvec failure w/o Exception"
+                      {:init-cnt init-cnt :s&es s&es})))
+          (let [s (rand-int cnt)
+                e (+ s (rand-int (- cnt s)))
+                c (- e s)]
+            (recur (conj s&es s e) c (dec slices)))))))
+  true)
+
+(defn generative-check-catvec [iterations max-vcnt min-cnt max-cnt]
+  (dotimes [_ iterations]
+    (let [vcnt (inc (rand-int (dec max-vcnt)))
+          cnts (vec (repeatedly vcnt
+                                #(+ min-cnt
+                                    (rand-int (- (inc max-cnt) min-cnt)))))]
+      (if-not (try (apply check-catvec cnts)
+                   (catch #?(:clj Exception :cljs js/Error) e
+                     (throw
+                      (ex-info "check-catvec failure w/ Exception"
+                               {:cnts cnts}
+                               e))))
+        (throw
+         (ex-info "check-catvec failure w/o Exception" {:cnts cnts})))))
+  true)
