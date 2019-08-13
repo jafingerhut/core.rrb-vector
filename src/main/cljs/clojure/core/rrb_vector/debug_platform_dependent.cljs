@@ -40,10 +40,7 @@
 
     (or (instance? clojure.core.rrb-vector.rrbt/Vector v)
         (instance? clojure.core.rrb-vector.rrbt/Transient v))
-    ;; TBD: This should be replaced with a bug fixed version of
-    ;; tail-offset that takes only one argument v.
-    (tail-offset (.-cnt v) (.-tail v))
-    ;;(tail-offset v)
+    (tail-offset v)
 
     :else
     (throw (ex-info (str "Called debug-tailoff on value with unsupported type "

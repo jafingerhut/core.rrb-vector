@@ -3,37 +3,45 @@
   (:require [clojure.core.rrb-vector.nodes
              :refer [regular? clone node-ranges last-range overflow?]]))
 
-(defn tail-offset [cnt tail]
-  (- cnt (alength tail)))
+(defn tail-offset [vec]
+  (let [cnt (.-cnt vec)
+        tail-len (if (instance? clojure.core.rrb-vector.rrbt/Transient vec)
+                   (.-tidx vec)
+                   (alength (.-tail vec)))]
+    (- cnt tail-len)))
 
-(defn array-for [cnt shift root tail i]
-  (if (and (<= 0 i) (< i cnt))
-    (if (>= i (tail-offset cnt tail))
-      tail
-      (loop [i i node root shift shift]
-        (if (zero? shift)
-          (.-arr node)
-          (if (regular? node)
-            (loop [node  (aget (.-arr node)
+(defn array-for [vec i]
+  (let [cnt (.-cnt vec)
+        shift (.-shift vec)
+        root (.-root vec)
+        tail (.-tail vec)]
+    (if (and (<= 0 i) (< i cnt))
+      (if (>= i (tail-offset vec))
+        tail
+        (loop [i i node root shift shift]
+          (if (zero? shift)
+            (.-arr node)
+            (if (regular? node)
+              (loop [node  (aget (.-arr node)
+                                 (bit-and (bit-shift-right i shift) 0x1f))
+                     shift (- shift 5)]
+                (if (zero? shift)
+                  (.-arr node)
+                  (recur (aget (.-arr node)
                                (bit-and (bit-shift-right i shift) 0x1f))
-                   shift (- shift 5)]
-              (if (zero? shift)
-                (.-arr node)
-                (recur (aget (.-arr node)
-                             (bit-and (bit-shift-right i shift) 0x1f))
-                       (- shift 5))))
-            (let [rngs (node-ranges node)
-                  j    (loop [j (bit-and (bit-shift-right i shift) 0x1f)]
-                         (if (< i (aget rngs j))
-                           j
-                           (recur (inc j))))
-                  i    (if (pos? j)
-                         (- i (aget rngs (dec j)))
-                         i)]
-              (recur i
-                     (aget (.-arr node) j)
-                     (- shift 5)))))))
-    (vector-index-out-of-bounds i cnt)))
+                         (- shift 5))))
+              (let [rngs (node-ranges node)
+                    j    (loop [j (bit-and (bit-shift-right i shift) 0x1f)]
+                           (if (< i (aget rngs j))
+                             j
+                             (recur (inc j))))
+                    i    (if (pos? j)
+                           (- i (aget rngs (dec j)))
+                           i)]
+                (recur i
+                       (aget (.-arr node) j)
+                       (- shift 5)))))))
+      (vector-index-out-of-bounds i cnt))))
 
 (defn new-path [tail edit shift current-node]
   (if (== (alength tail) 32)
@@ -116,7 +124,7 @@
 
 (defn pop-tail [shift cnt root-edit current-node]
   (if (regular? current-node)
-    (let [subidx (bit-and (bit-shift-right (dec cnt) shift) 0x1f)]
+    (let [subidx (bit-and (bit-shift-right (- cnt 2) shift) 0x1f)]
       (cond
         (> shift 5)
         (let [new-child (pop-tail (- shift 5) cnt root-edit
