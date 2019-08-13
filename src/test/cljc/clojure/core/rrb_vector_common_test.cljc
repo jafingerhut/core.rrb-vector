@@ -406,7 +406,7 @@
     ret))
 
 (defn puzzle-b-rrbv [n]
-  (puzzle-b n fv/vec custom-catvec dv/dbg-subvec))
+  (puzzle-b n fv/vec dv/dbg-catvec dv/dbg-subvec))
 
 ;;(puzzle-b-rrbv 977)
 ;;(puzzle-b-rrbv 978)
