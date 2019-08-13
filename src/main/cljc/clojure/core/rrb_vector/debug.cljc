@@ -568,147 +568,37 @@
                          ret coll-seq ret-seq exp-ret-seq err-desc-str)
          ret)))))
 
-(defn conj!-validator [f err-desc-str]
-  (fn validating-conj!
-    ([]
-     (let [coll-seq nil
-           exp-ret-seq (list)
-           ret (f)
+(defn validating-conj!
+  ([f err-desc-str]
+   (let [coll-seq nil
+         exp-ret-seq (list)
+         ret (f)
+         ret-seq (copying-seq ret)]
+     (conj-err-check "(conj!)" (list)
+                     ret coll-seq ret-seq exp-ret-seq err-desc-str)
+     ret))
+  ([f err-desc-str coll]
+   (let [coll-seq (copying-seq coll)
+         exp-ret-seq coll-seq
+         ret (f coll)
+         ret-seq (copying-seq ret)]
+     (conj-err-check "(conj! coll)" (list coll)
+                     ret coll-seq ret-seq exp-ret-seq err-desc-str)
+     ret))
+  ([f err-desc-str coll x]
+   (if-not (pd/is-vector? coll)
+     (f coll x)
+     (let [_ (println "called validating-conj! with (type coll)=" (type coll)
+                      "x=" x)
+           coll-seq (copying-seq coll)
+           exp-ret-seq (concat coll-seq (list x))
+           ret (f coll x)
            ret-seq (copying-seq ret)]
-       (conj-err-check "(conj!)" (list)
+       (conj-err-check "(conj! coll x)" (list coll x)
                        ret coll-seq ret-seq exp-ret-seq err-desc-str)
-       ret))
-    ([coll]
-     (let [coll-seq (copying-seq coll)
-           exp-ret-seq coll-seq
-           ret (f coll)
-           ret-seq (copying-seq ret)]
-       (conj-err-check "(conj! coll)" (list coll)
-                       ret coll-seq ret-seq exp-ret-seq err-desc-str)
-       ret))
-    ([coll x]
-     (if-not (pd/is-vector? coll)
-       (f coll x)
-       (let [_ (println "called validating-conj! with (type coll)=" (type coll)
-                        "x=" x)
-             coll-seq (copying-seq coll)
-             exp-ret-seq (concat coll-seq (list x))
-             ret (f coll x)
-             ret-seq (copying-seq ret)]
-         (conj-err-check "(conj! coll x)" (list coll x)
-                         ret coll-seq ret-seq exp-ret-seq err-desc-str)
-         ret)))))
+       ret))))
 
-(defn pop-validator [f err-desc-str]
-  (fn validating-pop [coll]
-     (if-not (pd/is-vector? coll)
-       (f coll)
-       (let [_ (println "called validating-pop #=" (count coll))
-             coll-seq (copying-seq coll)
-             exp-ret-seq (butlast coll-seq)
-             ret (f coll)
-             ret-seq (copying-seq ret)]
-         (when (not= ret-seq exp-ret-seq)
-           (println "ERROR: (pop coll) returned incorrect value")
-           (record-failure-data {:err-desc-str err-desc-str, :ret ret,
-                                 :args (list coll),
-                                 :coll-seq coll-seq, :ret-seq ret-seq,
-                                 :exp-ret-seq exp-ret-seq}))
-         ret))))
-
-(defn pop!-validator [f err-desc-str]
-  (fn validating-pop! [coll]
-    (if-not (pd/is-vector? coll)
-      (f coll)
-      (let [_ (println "called validating-pop! #=" (count coll))
-            coll-seq (copying-seq coll)
-            exp-ret-seq (butlast coll-seq)
-            ret (f coll)
-            ret-seq (copying-seq ret)]
-        (when (not= ret-seq exp-ret-seq)
-          (println "ERROR: (pop! coll) returned incorrect value")
-          (record-failure-data {:err-desc-str err-desc-str, :ret ret,
-                                :args (list coll),
-                                :coll-seq coll-seq, :ret-seq ret-seq,
-                                :exp-ret-seq exp-ret-seq}))
-        ret))))
-
-;; This works fine for Clojure, but goes into infinite loop on
-;; validating-conj for ClojureScript, and probably other functions.
-#_(defn call-in-vector-validator-env [f]
-  (with-redefs
-    [clojure.core/conj (conj-validator clojure.core/conj "conj-validator")
-     clojure.core/conj! (conj!-validator clojure.core/conj! "conj!-validator")
-     clojure.core/pop (pop-validator clojure.core/pop "clojure.core/pop ")
-     clojure.core/pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
-
-     #?(:clj clojure.core.rrb-vector.protocols/slicev
-        :cljs clojure.core.rrb-vector.protocols/-slicev)
-     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
-                          :cljs clojure.core.rrb-vector.protocols/-slicev)
-                       "clojure.core.rrb-vector.protocols/slicev")
-
-     clojure.core.rrb-vector.rrbt/splice-rrbts
-     (splice-rrbts-validator
-      clojure.core.rrb-vector.rrbt/splice-rrbts
-      "clojure.core.rrb-vector.rrbt/splice-rrbts")
-
-     clojure.core.rrb-vector/catvec
-     (catvec-validator clojure.core.rrb-vector/catvec
-                       "clojure.core.rrb-vector/catvec")]
-    (f)))
-
-#_(def dbg-conj clojure.core/conj)
-#_(def dbg-conj! clojure.core/conj!)
-#_(def dbg-pop clojure.core/pop)
-#_(def dbg-pop! clojure.core/pop!)
-#_(def dbg-splice-rrbts clojure.core.rrb-vector.rrbt/splice-rrbts)
-
-#_(defn call-in-vector-validator-env2 [f]
-  (with-redefs
-    [dbg-conj (conj-validator clojure.core/conj "conj-validator")
-     dbg-conj! (conj!-validator clojure.core/conj! "conj!-validator")
-     dbg-pop (pop-validator clojure.core/pop "clojure.core/pop ")
-     dbg-pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
-
-     dbg-slicev
-     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
-                          :cljs clojure.core.rrb-vector.protocols/-slicev)
-                       "clojure.core.rrb-vector.protocols/slicev")
-
-     dbg-splice-rrbts
-     (splice-rrbts-validator
-      clojure.core.rrb-vector.rrbt/splice-rrbts
-      "clojure.core.rrb-vector.rrbt/splice-rrbts")
-
-     dbg-catvec
-     (catvec-validator clojure.core.rrb-vector/catvec
-                       "clojure.core.rrb-vector/catvec")]
-    (f)))
-
-#_(defn call-in-vector-validator-env3 [f]
-  (with-redefs
-    [dbg-conj (conj-validator clojure.core/conj "conj-validator")
-     dbg-conj! (conj!-validator clojure.core/conj! "conj!-validator")
-     dbg-pop (pop-validator clojure.core/pop "clojure.core/pop ")
-     dbg-pop! (pop!-validator clojure.core/pop! "clojure.core/pop!")
-
-     #?(:clj clojure.core.rrb-vector.protocols/slicev
-        :cljs clojure.core.rrb-vector.protocols/-slicev)
-     (slicev-validator #?(:clj clojure.core.rrb-vector.protocols/slicev
-                          :cljs clojure.core.rrb-vector.protocols/-slicev)
-                       "clojure.core.rrb-vector.protocols/slicev")
-
-     clojure.core.rrb-vector.rrbt/splice-rrbts
-     (splice-rrbts-validator
-      clojure.core.rrb-vector.rrbt/splice-rrbts
-      "clojure.core.rrb-vector.rrbt/splice-rrbts")
-
-     clojure.core.rrb-vector/catvec
-     (catvec-validator clojure.core.rrb-vector/catvec
-                       "clojure.core.rrb-vector/catvec")]
-    (f)))
-
+;; TBD: Keep this, or discard?
 (defn vector-return-value-checks-print-and-record [err-desc-str ret & args]
   ;;(println "checking ret val from" err-desc-str)
   (let [i (edit-nodes-errors ret)]
@@ -821,7 +711,7 @@
 
 ;; :catvec used by dbg-catvec
 ;; :splicev used by dbg-splicev
-;; tbd for other dbg-* functions
+;; :slicev used by dbg-slicev
 
 ;; The value associated with each key is a submap that may have the
 ;; following keys.
@@ -867,6 +757,94 @@
                     ": " (:description i)))
       (record-failure-data {:err-desc-str err-desc-str, :ret ret,
                             :args args, :ranges-errors i}))))
+
+(defn validating-pop [f err-desc-str coll]
+  (let [_ (println "called validating-pop #=" (count coll))
+        coll-seq (copying-seq coll)
+        exp-ret-seq (butlast coll-seq)
+        ret (f coll)
+        ret-seq (copying-seq ret)]
+    (when (not= ret-seq exp-ret-seq)
+      (println "ERROR: (pop coll) returned incorrect value")
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args (list coll),
+                            :coll-seq coll-seq, :ret-seq ret-seq,
+                            :exp-ret-seq exp-ret-seq}))
+    ret))
+
+(defn dbg-pop [coll]
+  (if-not (pd/is-vector? coll)
+    (clojure.core/pop coll)
+    (let [opts (get @debug-opts :pop)
+          err-desc-str "pop"]
+      (when (:trace opts)
+        (println "dbg-pop called with #v=" (count coll)
+                 "(type v)=" (type coll)))
+      (let [ret (if (:validate opts)
+                  (validating-pop clojure.core/pop err-desc-str coll)
+                  (clojure.core/pop coll))]
+        (doseq [check-fn (:return-value-checks opts)]
+          (check-fn err-desc-str ret coll))
+        ret))))
+
+(defn validating-pop! [f err-desc-str coll]
+  (let [_ (println "called validating-pop! #=" (count coll))
+        coll-seq (copying-seq coll)
+        exp-ret-seq (butlast coll-seq)
+        ret (f coll)
+        ret-seq (copying-seq ret)]
+    (when (not= ret-seq exp-ret-seq)
+      (println "ERROR: (pop! coll) returned incorrect value")
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args (list coll),
+                            :coll-seq coll-seq, :ret-seq ret-seq,
+                            :exp-ret-seq exp-ret-seq}))
+    ret))
+
+(defn dbg-pop! [coll]
+  (if-not (pd/is-vector? coll)
+    (clojure.core/pop! coll)
+    (let [opts (get @debug-opts :pop!)
+          err-desc-str "pop!"]
+      (when (:trace opts)
+        (println "dbg-pop! called with #v=" (count coll)
+                 "(type v)=" (type coll)))
+      (let [ret (if (:validate opts)
+                  (validating-pop! clojure.core/pop! err-desc-str coll)
+                  (clojure.core/pop! coll))]
+        (doseq [check-fn (:return-value-checks opts)]
+          (check-fn err-desc-str ret coll))
+        ret))))
+
+(defn validating-transient [f err-desc-str coll]
+  (let [_ (println "called validating-transient #=" (count coll))
+        coll-seq (copying-seq coll)
+        exp-ret-seq coll-seq
+        ret (f coll)
+        ret-seq (copying-seq ret)]
+    (when (not= ret-seq exp-ret-seq)
+      (println "ERROR: (transient coll) returned incorrect value")
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args (list coll),
+                            :coll-seq coll-seq, :ret-seq ret-seq,
+                            :exp-ret-seq exp-ret-seq}))
+    ret))
+
+(defn dbg-transient [coll]
+  (if-not (pd/is-vector? coll)
+    (clojure.core/transient coll)
+    (let [opts (get @debug-opts :transient)
+          err-desc-str "transient"]
+      (when (:trace opts)
+        (println "dbg-transient called with #v=" (count coll)
+                 "(type v)=" (type coll)))
+      (let [ret (if (:validate opts)
+                  (validating-transient clojure.core/transient err-desc-str
+                                        coll)
+                  (clojure.core/transient coll))]
+        (doseq [check-fn (:return-value-checks opts)]
+          (check-fn err-desc-str ret coll))
+        ret))))
 
 ;; Note: One possible advantage to having a validator for splice-rrbts
 ;; is that fv/catvec can call splice-rrbts multiple times, any one of

@@ -21,7 +21,11 @@
 
 (reset! dv/debug-opts {:catvec full-debug-opts
                        :splice-rrbts full-debug-opts
-                       :slicev full-debug-opts})
+                       :slicev full-debug-opts
+                       :pop full-debug-opts
+                       :pop! full-debug-opts
+                       :transient full-debug-opts
+                       })
 
 
 ;;(def longer-generative-tests true)
@@ -172,6 +176,224 @@
         res      (dv/dbg-catvec (dv/dbg-subvec z 0 780) [] [3] (dv/dbg-subvec z 781))
         expected (concat (repeat 779 \a) [1] [3] (repeat 366 \a))]
     (is (= res expected))))
+
+(defn npe-for-1025-then-pop! [kind]
+  (let [bfactor-squared (* 32 32)
+        mk-vector (case kind
+                    :object-array fv/vector
+                    #?@(:clj (:long-array #(fv/vector-of :long))))
+        boundary 54
+        v1 (-> (mk-vector)
+               (into (range boundary))
+               (into (range boundary (inc bfactor-squared))))
+        v2 (-> (mk-vector)
+               (into (range bfactor-squared))
+               (transient)
+               (dv/dbg-pop!)
+               (persistent!))
+        v3 (-> (mk-vector)
+               (into (range boundary))
+               (into (range boundary (inc bfactor-squared)))
+               (transient)
+               (dv/dbg-pop!)
+               (persistent!))
+        v4 (-> (mk-vector)
+               (into (range (inc bfactor-squared)))
+               (transient)
+               (dv/dbg-pop!)
+               (persistent!))]
+    ;; This test passes
+    (is (= (seq v1) (range (inc bfactor-squared))))
+    ;; This also passes
+    (is (= (seq v2) (range (dec bfactor-squared))))
+    ;; This fails with NullPointerException while traversing the seq
+    ;; on clj.  It gets a different kind of error with cljs.
+    (is (= (seq v3) (range bfactor-squared)))
+    ;; This one causes a NullPointerException while traversing the seq
+    (is (= (seq v4) (range bfactor-squared)))))
+
+(deftest test-npe-for-1025-then-pop!
+  (println "deftest test-npe-for-1025-then-pop!")
+  (doseq [kind #?(:clj [:object-array :long-array]
+                  :cljs [:object-array])]
+    (npe-for-1025-then-pop! kind)))
+
+
+;; This problem reproduction code is from a comment by Mike Fikes on
+;; 2018-Dec-09 for this issue:
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-20
+
+(defn play [my-vector my-catvec my-subvec players rounds]
+  (letfn [(swap [marbles split-ndx]
+            (my-catvec
+             (my-subvec marbles split-ndx)
+             (my-subvec marbles 0 split-ndx)))
+          (rotl [marbles n]
+            (swap marbles (mod n (count marbles))))
+          (rotr [marbles n]
+            (swap marbles (mod (- (count marbles) n) (count marbles))))
+          (place-marble
+            [marbles marble]
+            (let [marbles (rotl marbles 2)]
+              [(my-catvec (my-vector marble) marbles) 0]))
+          (remove-marble [marbles marble]
+            (let [marbles (rotr marbles 7)
+                  first-marble (nth marbles 0)]
+              [(my-subvec marbles 1) (+ marble first-marble)]))
+          (play-round [marbles round]
+            (if (zero? (mod round 23))
+              (remove-marble marbles round)
+              (place-marble marbles round)))
+          (add-score [scores player round-score]
+            (if (zero? round-score)
+              scores
+              (assoc scores player (+ (get scores player 0) round-score))))]
+    (loop [marbles (my-vector 0)
+           round   1
+           player  1
+           scores  {}
+           ret     []]
+      (let [[marbles round-score] (play-round marbles round)
+            scores (add-score scores player round-score)]
+        (if (> round rounds)
+          (conj ret {:round round :marbles marbles})
+          (recur marbles
+                 (inc round)
+                 (if (= player players) 1 (inc player))
+                 scores
+                 (conj ret {:round round :marbles marbles})))))))
+
+(defn play-core [& args]
+  (apply play clojure.core/vector clojure.core/into clojure.core/subvec args))
+
+(defn play-rrbv [& args]
+  (apply play fv/vector dv/dbg-catvec dv/dbg-subvec args))
+
+(deftest test-many-subvec-and-catvec-leads-to-exception
+  (println "deftest test-many-subvec-and-catvec-leads-to-exception")
+  ;; This one passes
+  (is (= (play-core 10 1128)
+         (play-rrbv 10 1128)))
+  ;; This ends up with (play-rrbv 10 1129) throwing an exception
+  (is (= (play-core 10 1129)
+         (play-rrbv 10 1129)))
+
+  ;; The previous test demonstrates a bug in the transient RRB vector
+  ;; implementation.  The one below demonstrates a similar bug in the
+  ;; persistent RRB vector implementation.
+  (let [v1128 (:marbles (last (play-rrbv 10 1128)))
+        v1129-pre (-> v1128
+                      (fv/subvec 2)
+                      (conj 2001))]
+    (is (every? integer? (conj v1129-pre 2002))))
+
+  ;; The following sequence of operations gives a different exception
+  ;; than the above, and I suspect is probably a different root cause
+  ;; with a distinct fix required.  It might be the same root cause as
+  ;; npe-for-1025-then-pop! but I will add a separate test case until
+  ;; I know for sure.  Even if they are the same root cause, it does
+  ;; not take long to run.
+
+  ;; Note: Even once this bug is fixed, I want to know the answer to
+  ;; whether starting from v1128 and then pop'ing off each number of
+  ;; elements, until it is down to empty or very nearly so, causes any
+  ;; of the error checks within the current version of ranges-errors
+  ;; to give an error.  It may require some correcting.
+  (let [v1128 (:marbles (last (play-rrbv 10 1128)))
+        vpop1 (reduce (fn [v i] (pop v))
+                      v1128 (range 1026))]
+    (is (every? integer? (pop vpop1)))
+    ;; The transient version below gives a similar exception, but the
+    ;; call stack goes through the transient version of popTail,
+    ;; rather than the persistent version of popTail that the one
+    ;; above does.  It seems likely that both versions of popTail have
+    ;; a similar bug.
+    (is (every? integer? (persistent! (pop! (transient vpop1)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This code was copied from
+;; https://github.com/mattiasw2/adventofcode1/blob/master/src/adventofcode1/nineteen_b.clj
+
+;; mentioned in issue
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-14
+
+(defn puzzle-b [n my-vec my-catvec my-subvec]
+  (letfn [(remove-at [arr idx]
+            (my-catvec (my-subvec arr 0 idx) (my-subvec arr (inc idx))))
+          (create-arr [size]
+            (my-vec (range 1 (inc size))))
+          (fv-rest [arr]
+            (my-subvec arr 1))
+          (calculate-opposite [n]
+            (int (/ n 2)))
+          (move [elfs]
+            (let [lc (count elfs)]
+              (if (= 1 lc)
+                {:ok (first elfs)}
+                (let [current      (first elfs)
+                      opposite-pos (calculate-opposite lc)
+                      _ (assert (> opposite-pos 0))
+                      _ (assert (< opposite-pos lc))
+                      opposite-elf (nth elfs opposite-pos)
+                      other2       (fv-rest (remove-at elfs opposite-pos))]
+                  (my-catvec other2 [current])))))
+          (puzzle-b-sample [elfs round]
+            (let [elfs2 (move elfs)]
+              ;;(println "round=" round "# elfs=" (count elfs))
+              (if (:ok elfs2)
+                (:ok elfs2)
+                (recur elfs2 (inc round)))))]
+    (puzzle-b-sample (create-arr n) 1)))
+
+(defn puzzle-b-core [n]
+  (puzzle-b n clojure.core/vec clojure.core/into clojure.core/subvec))
+
+(defn vstats [v]
+  (str "cnt=" (count v)
+       " shift=" (.-shift v)
+       " %=" (dpd/format "%5.1f" (* 100.0 (dv/fraction-full v)))))
+
+(def custom-catvec-data (atom []))
+
+(defn custom-catvec [& args]
+  (doall (map-indexed
+          (fn [idx v]
+            (println (str "custom-catvec ENTER v" idx "  " (vstats v))))
+          args))
+  (let [n (count @custom-catvec-data)
+        ret (apply dv/dbg-catvec args)]
+    (println (str "custom-catvec LEAVE ret " (vstats ret)))
+    ;;(swap! custom-catvec-data conj {:args args :ret ret})
+    ;;(println "custom-catvec RECRD in index" n "of @custom-catvec-data")
+    ret))
+
+(defn puzzle-b-rrbv [n]
+  (puzzle-b n fv/vec custom-catvec dv/dbg-subvec))
+
+;;(puzzle-b-rrbv 977)
+;;(puzzle-b-rrbv 978)
+;;(count @extra-check-failures)
+;;(def a1 (nth @extra-check-failures 0))
+;;(use 'clojure.pprint)
+;;(pprint a1)
+
+;;(def x (mapv (fn [i]
+;;               (let [ret (puzzle-b-rrbv i)]
+;;                 {:i i :ret ret :good? (every? integer? ret)}))
+;;             (range 1 700)))
+
+;;(every? :good? x)
+
+(deftest test-crrbv-14
+  (println "deftest test-crrbv-14")
+  ;; This one passes
+  (is (= (puzzle-b-core 977)
+         (puzzle-b-rrbv 977)))
+  ;; (puzzle-b-rrbv 978) throws
+  ;; ArrayIndexOutOfBoundsException
+  (is (integer? (puzzle-b-rrbv 978))))
+
 
 (comment
 (require '[clojure.test :as t]
