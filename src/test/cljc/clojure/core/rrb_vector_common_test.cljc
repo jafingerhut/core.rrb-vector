@@ -95,7 +95,7 @@
     (is (dv/check-catvec 10 40 40 40 40 40 40 40 40))
     (is (apply dv/check-catvec (repeat 30 33)))))
 
-#_(deftest test-splicing-generative
+(deftest test-splicing-generative
   (println "deftest test-splicing-generative")
   (testing "splicing (generative)"
     (is (try (if longer-generative-tests
@@ -313,7 +313,7 @@
          (play-rrbv 10 1128)))
   ;; This ends up with (play-rrbv 10 1129) throwing an exception
   (is (= (play-core 10 1129)
-         (play-rrbv 10 1129))))
+         (play-rrbv 10 1129)))
 
   ;; The previous test demonstrates a bug in the transient RRB vector
   ;; implementation.  The one below demonstrates a similar bug in the
@@ -322,7 +322,7 @@
         v1129-pre (-> v1128
                       (fv/subvec 2)
                       (conj 2001))]
-    (is (every? integer? (conj v1129-pre 2002))))
+    (is (every? integer? (conj v1129-pre 2002)))))
 
 (deftest test-crrbv-21
   (println "deftest test-crrbv-21")
