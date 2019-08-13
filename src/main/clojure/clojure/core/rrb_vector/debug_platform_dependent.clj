@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [format printf])
   (:require clojure.core.rrb-vector.rrbt
             [clojure.core.rrb-vector.nodes
-             :refer [ranges object-nm primitive-nm object-am int-array?]]
+             :refer [ranges object-nm primitive-nm object-am]]
             [clojure.core.rrb-vector :as fv])
   (:import (clojure.lang PersistentVector PersistentVector$TransientVector
                          PersistentVector$Node APersistentVector$SubVector)
@@ -185,6 +185,11 @@
                           (go n (- shift 5)))))))]
           (go (get-root v) (get-shift v)))))
     (.size m)))
+
+(defn int-array? [x]
+  (and (not (nil? x))
+       (.isArray (class x))
+       (= Integer/TYPE (. (class x) getComponentType))))
 
 ;; TBD: No cljs-specific version of this function yet
 #_(defn ranges-not-int-array [x]

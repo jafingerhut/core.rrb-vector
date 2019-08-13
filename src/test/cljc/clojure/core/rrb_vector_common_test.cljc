@@ -3,6 +3,7 @@
             #?@(:clj ([clojure.java.io :as io]))
             [clojure.edn :as edn]
             [clojure.core.rrb-vector :as fv]
+            [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]
             [clojure.core.reducers :as r]
@@ -330,22 +331,9 @@
                      (and (> i 99000) (zero? (mod i 100)))
                      (and (> i 99900)))]
       (when check?
-        (println "i=" i))
-      (if (< i benchmark-size)
-        (recur (if check?
-                 (dv/dbg-catvec (fv/vector i) v)
-                 (fv/catvec (fv/vector i) v))
-               (inc i))
-        v))))
-
-(defn dbg-vector-push-f [v]
-  (loop [v v
-         i 0]
-    (let [check? (or (zero? (mod i 1000))
-                     (and (> i 99000) (zero? (mod i 100)))
-                     (> i 99800))]
-      (when check?
-        (println "i=" i))
+        (println "i=" i
+                 "fallback-count1=" @rrbt/fallback-to-slow-splice-count1
+                 "fallback-count2=" @rrbt/fallback-to-slow-splice-count2))
       (if (< i benchmark-size)
         (recur (if check?
                  (dv/dbg-catvec (fv/vector i) v)

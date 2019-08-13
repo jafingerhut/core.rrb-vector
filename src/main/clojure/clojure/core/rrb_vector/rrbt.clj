@@ -9,8 +9,7 @@
                      first-child last-child remove-leftmost-child
                      replace-leftmost-child replace-rightmost-child
                      fold-tail new-path index-of-nil
-                     object-am object-nm primitive-nm
-                     dbgln int-array?]]
+                     object-am object-nm primitive-nm]]
             [clojure.core.rrb-vector.transients :refer [transient-helper]]
             [clojure.core.rrb-vector.fork-join :as fj]
             [clojure.core.protocols :refer [IKVReduce]]
@@ -364,7 +363,6 @@
         (.node nm nil new-arr)))))
 
 (defn slice-left [^NodeManager nm ^ArrayManager am node shift start end]
-  (dbgln "slice-left shift=" shift "start=" start "end=" end)
   (let [shift (int shift)
         start (int start)
         end   (int end)]
@@ -830,10 +828,7 @@
   ;; Note 2: See the corresponding Note 2 for the pushTail method in
   ;; transients.clj.
   (pushTail [this shift cnt node tail-node]
-    (dbgln "Vector.pushTail shift=" shift "cnt=" cnt)
-    (if (let [tmp (.regular nm node)]
-          (dbgln "Vector.pushTail regular=" tmp)
-          tmp)
+    (if (.regular nm node)
       (let [arr (aclone ^objects (.array nm node))
             ret (.node nm (.edit nm node) arr)]
         (loop [node ret shift (int shift)]
@@ -874,7 +869,6 @@
                                   (unchecked-inc-int ccnt)
                                   (aget ^objects arr li)
                                   tail-node))))]
-        (dbgln "Vector.pushTail cret=" cret)
         (if cret
           (do (aset ^objects arr li cret)
               (aset rngs li (unchecked-add-int (aget rngs li) (int 32)))
@@ -1079,7 +1073,6 @@
   
   PSliceableVector
   (slicev [this start end]
-    (dbgln "Vector.slicev start=" start "end=" end)
     (let [start   (int start)
           end     (int end)
           new-cnt (unchecked-subtract-int end start)]
@@ -1103,7 +1096,6 @@
                                 new-cnt)
               (Vector. nm am new-cnt (int 5) (.empty nm) new-tail _meta -1 -1))
             (let [tail-cut? (> end tail-off)
-                  _ (dbgln "Vector.slicev tail-cut?=" tail-cut?)
                   new-root  (if tail-cut?
                               root
                               (slice-right nm am root shift end))
@@ -1313,15 +1305,7 @@
       (.alength am arr)
       (if (.regular nm node)
         (index-of-nil arr)
-        (let [
-;;              _ (dbgln "slot-count "
-;;                       ;;"(type nm)=" (type nm)
-;;                       "(type node)=" (type node)
-;;                       "(type (aget (.array nm node) 32))="
-;;                       (type (aget (.array nm node) 32) )
-;;                       "types="
-;;                       (frequencies (map type (.array nm node))))
-              rngs (ranges nm node)]
+        (let [rngs (ranges nm node)]
           (aget rngs 32))))))
 
 (defn subtree-branch-count [^NodeManager nm ^ArrayManager am node shift]
@@ -1619,6 +1603,9 @@
 
 ;; TBD: Is there any promise about what metadata catvec returns?
 ;; Always the same as on the first argument?
+(def fallback-to-slow-splice-count1 (atom 0))
+(def fallback-to-slow-splice-count2 (atom 0))
+
 (defn fallback-to-slow-splice-if-needed [^Vector v1 ^Vector v2
                                          ^Vector splice-result]
   (let [c1 (long (count v1))
@@ -1633,15 +1620,16 @@
                 (poor-branching? splice-result))
       splice-result    ;; the fast result is good
       (do
-        (dbgln "splice-rrbts result had shift " (.-shift splice-result)
-               " and " (.tailoff splice-result) " elements not counting"
-               " the tail.  Falling back to slower method of concatenation.")
+        (dbg (str "splice-rrbts result had shift " (.-shift splice-result)
+                  " and " (.tailoff splice-result) " elements not counting"
+                  " the tail. Falling back to slower method of concatenation."))
         (if (poor-branching? v1)
           ;; The v1 we started with was not good, either.
           (do
-            (dbgln "splice-rrbts first arg had shift " (.-shift v1)
-                   " and " (.tailoff v1) " elements not counting"
-                   " the tail.  Building the result from scratch.")
+            (swap! fallback-to-slow-splice-count1 inc)
+            (dbg (str "splice-rrbts first arg had shift " (.-shift v1)
+                      " and " (.tailoff v1) " elements not counting"
+                      " the tail.  Building the result from scratch."))
             ;: See Note 3
             (-> (empty v1) (into v1) (into v2)))
           ;; Assume that v1 is balanced enough that we can use into to
@@ -1649,12 +1637,11 @@
           ;; That assumption might be incorrect.  Consider checking
           ;; the result of this, too, and fall back again to the true
           ;; case above?
-          (into v1 v2))))))
+          (do
+            (swap! fallback-to-slow-splice-count2 inc)
+            (into v1 v2)))))))
 
 (defn splice-rrbts [^NodeManager nm ^ArrayManager am ^Vector v1 ^Vector v2]
-  (dbgln "splice-rrbts"
-         " v1 cnt=" (count v1) "shift=" (.-shift v1)
-         " v2 cnt=" (count v2) "shift=" (.-shift v2))
   (cond
     (zero? (count v1)) v2
     (< (count v2) rrbt-concat-threshold) (into v1 v2)
@@ -1826,7 +1813,6 @@
   clojure.lang.ITransientCollection
   (conj [this val]
     (.ensureEditable transient-helper nm root)
-    (dbgln "Transient.conj val=" val "tidx=" tidx)
     (if (< tidx 32)
       (do (.aset am tail tidx val)
           (set! cnt  (unchecked-inc-int cnt))
@@ -1837,12 +1823,8 @@
         (.aset am new-tail 0 val)
         (set! tail new-tail)
         (set! tidx (int 1))
-        (if (let [tmp (overflow? nm root shift cnt)]
-              (dbgln "Transient.conj overflow?=" tmp)
-              tmp)
-          (if (let [tmp (.regular nm root)]
-                (dbgln "Transient.conj regular=" tmp)
-                tmp)
+        (if (overflow? nm root shift cnt)
+          (if (.regular nm root)
             (let [new-arr (object-array 32)]
               (doto new-arr
                 (aset 0 root)
@@ -1869,8 +1851,7 @@
               (set! shift (unchecked-add-int shift (int 5)))
               (set! cnt   (unchecked-inc-int cnt))
               this))
-          (let [_ (dbgln "Transient.conj just before pushTail")
-                new-root (.pushTail transient-helper nm am
+          (let [new-root (.pushTail transient-helper nm am
                                     shift cnt (.edit nm root) root tail-node)]
             (set! root new-root)
             (set! cnt  (unchecked-inc-int cnt))

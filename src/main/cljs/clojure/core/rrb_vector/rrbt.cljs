@@ -13,7 +13,8 @@
                      do-assoc]]
             [clojure.core.rrb-vector.transients
              :refer [ensure-editable editable-root editable-tail push-tail!
-                     pop-tail! do-assoc!]]))
+                     pop-tail! do-assoc!]])
+  (:require-macros [clojure.core.rrb-vector.macros :refer [dbg]]))
 
 (def ^:const rrbt-concat-threshold 33)
 (def ^:const max-extra-search-steps 2)
@@ -900,6 +901,10 @@
 
 ;; TBD: Is there any promise about what metadata catvec returns?
 ;; Always the same as on the first argument?
+
+(def fallback-to-slow-splice-count1 (atom 0))
+(def fallback-to-slow-splice-count2 (atom 0))
+
 (defn fallback-to-slow-splice-if-needed [v1 v2 splice-result]
   (let [c1 (long (count v1))
         c2 (long (count v2))]
@@ -913,15 +918,16 @@
                 (poor-branching? splice-result))
       splice-result    ;; the fast result is good
       (do
-        (println "splice-rrbts result had shift " (.-shift splice-result)
-                 " and " (tail-offset splice-result) " elements not counting"
-                 " the tail.  Falling back to slower method of concatenation.")
+        (dbg (str "splice-rrbts result had shift " (.-shift splice-result)
+                  " and " (tail-offset splice-result) " elements not counting"
+                  " the tail. Falling back to slower method of concatenation."))
         (if (poor-branching? v1)
           ;; The v1 we started with was not good, either.
           (do
-            (println "splice-rrbts first arg had shift " (.-shift v1)
-                     " and " (tail-offset v1) " elements not counting"
-                     " the tail.  Building the result from scratch.")
+            (swap! fallback-to-slow-splice-count1 inc)
+            (dbg (str "splice-rrbts first arg had shift " (.-shift v1)
+                      " and " (tail-offset v1) " elements not counting"
+                      " the tail.  Building the result from scratch."))
             ;: See Note 3
             (-> (empty v1) (into v1) (into v2)))
           ;; Assume that v1 is balanced enough that we can use into to
@@ -929,7 +935,9 @@
           ;; That assumption might be incorrect.  Consider checking
           ;; the result of this, too, and fall back again to the true
           ;; case above?
-          (into v1 v2))))))
+          (do
+            (swap! fallback-to-slow-splice-count2 inc)
+            (into v1 v2)))))))
 
 (defn splice-rrbts [v1 v2]
   (cond
