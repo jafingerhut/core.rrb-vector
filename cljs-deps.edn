@@ -1,0 +1,22 @@
+{:paths ["src/main/clojure" "src/main/cljs" "src/main/cljc"]
+ :deps {org.clojure/clojurescript {:mvn/version "1.10.520"}
+        ;;org.clojure/clojurescript {:local/root "/Users/jafinger/clj/clojurescript"}
+        }
+ :aliases
+ {;; start a Node-based ClojureScript socket REPL on port 50505
+  :cljs-socket {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,cljs.server.node/repl}"]}
+  :test {:extra-paths ["src/test/clojure" "src/test/cljs" "src/test/cljc"]
+         :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
+  :cljs-test {:main-opts ["-m" "cljs.main"
+                          "-re" "node"
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  ;; I have tried using cljs-test-runner for running clojure.test
+  ;; tests in a modified version of core.rrb-vector, but my guess is
+  ;; that since an older version of core.rrb-vector (version 0.0.11)
+  ;; is in the transitive dependencies of the cljs-test-runner project
+  ;; itself, that version conflicts with the version I am attempting
+  ;; to test.  See
+  ;; https://github.com/Olical/cljs-test-runner/issues/34
+  :cljs-runner {:extra-deps {olical/cljs-test-runner {:mvn/version "3.7.0"}}
+                :main-opts ["-m" "cljs-test-runner.main"
+                            "-d" "src/test/cljs"]}}}

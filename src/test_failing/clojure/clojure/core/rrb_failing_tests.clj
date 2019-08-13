@@ -36,11 +36,13 @@
                                         :ret ret
                                         :args args
                                         :edit-nodes-errors i})))
-  (when-let [err (seq (dv/ranges-not-int-array ret))]
-    (println "ERROR:" err-desc-str "ret has non int-array ranges")
-    (swap! extra-check-failures conj {:err-desc-str err-desc-str
-                                      :ret ret
-                                      :args args}))
+  ;; TBD: re-enable these sanity checks, after implementing them
+  ;; similarly for both clj and cljs
+;  (when-let [err (seq (dv/ranges-not-int-array ret))]
+;    (println "ERROR:" err-desc-str "ret has non int-array ranges")
+;    (swap! extra-check-failures conj {:err-desc-str err-desc-str
+;                                      :ret ret
+;                                      :args args}))
   (let [i (dv/basic-node-errors ret)]
     (when (:error i)
       (println (str "ERROR: found problem with ret value from " err-desc-str
