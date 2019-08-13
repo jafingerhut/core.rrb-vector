@@ -1,5 +1,6 @@
 (ns clojure.core.rrb-vector-common-test
   (:require [clojure.test :refer [deftest testing is are]]
+            [clojure.java.io :as io]
             [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]
@@ -221,6 +222,34 @@
         res      (dv/dbg-catvec (dv/dbg-subvec z 0 780) [] [3] (dv/dbg-subvec z 781))
         expected (concat (repeat 779 \a) [1] [3] (repeat 366 \a))]
     (is (= res expected))))
+
+
+;; This problem reproduction code is from CRRBV-12 ticket:
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-12
+
+(defn quicksort [v]
+  (if (<= (count v) 1)
+    v
+    (let [[x & xs] v]
+      (dv/dbg-catvec (quicksort (filterv #(<= % x) xs))
+                     [x]
+                     (quicksort (filterv #(> % x) xs))))))
+
+(defn ascending? [coll]
+  (every? (fn [[a b]] (<= a b))
+          (partition 2 1 coll)))
+
+(deftest test-crrbv-12
+  (let [v (read-string (slurp (io/resource "clojure/core/crrbv-12-data.edn")))]
+    (testing "Ascending order after quicksort"
+      (is (ascending? (quicksort v)))))
+  (testing "Repeated catvec followed by pop"
+      (is (= [] (nth (iterate pop
+                              (nth (iterate #(dv/dbg-catvec [0] %) [])
+                                   963))
+                     963)))))
+
+
 
 (defn npe-for-1025-then-pop! [kind]
   (let [bfactor-squared (* 32 32)
