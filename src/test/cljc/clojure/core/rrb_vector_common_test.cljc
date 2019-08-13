@@ -306,14 +306,14 @@
 (defn play-rrbv [& args]
   (apply play fv/vector dv/dbg-catvec dv/dbg-subvec args))
 
-(deftest test-many-subvec-and-catvec-leads-to-exception
-  (println "deftest test-many-subvec-and-catvec-leads-to-exception")
+(deftest test-crrbv-20
+  (println "deftest test-crrbv-20")
   ;; This one passes
   (is (= (play-core 10 1128)
          (play-rrbv 10 1128)))
   ;; This ends up with (play-rrbv 10 1129) throwing an exception
   (is (= (play-core 10 1129)
-         (play-rrbv 10 1129)))
+         (play-rrbv 10 1129))))
 
   ;; The previous test demonstrates a bug in the transient RRB vector
   ;; implementation.  The one below demonstrates a similar bug in the
@@ -324,6 +324,8 @@
                       (conj 2001))]
     (is (every? integer? (conj v1129-pre 2002))))
 
+(deftest test-crrbv-21
+  (println "deftest test-crrbv-21")
   ;; The following sequence of operations gives a different exception
   ;; than the above, and I suspect is probably a different root cause
   ;; with a distinct fix required.  It might be the same root cause as
@@ -406,7 +408,7 @@
     ret))
 
 (defn puzzle-b-rrbv [n]
-  (puzzle-b n fv/vec custom-catvec dv/dbg-subvec))
+  (puzzle-b n fv/vec dv/dbg-catvec dv/dbg-subvec))
 
 ;;(puzzle-b-rrbv 977)
 ;;(puzzle-b-rrbv 978)
