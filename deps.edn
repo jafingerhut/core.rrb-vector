@@ -12,6 +12,9 @@
 ;; Run tests for ClojureScript
 ;; clj -A:test:cljs-test
 
+;; Run Eastwood on Clojure version of code:
+;; clj -A:eastwood:test:check
+
 {:paths ["src/main/clojure" "src/main/cljs" "src/main/cljc"]
  :deps {org.clojure/clojurescript {:mvn/version "1.10.520"}
         ;;org.clojure/clojurescript {:local/root "/Users/jafinger/clj/clojurescript"}
