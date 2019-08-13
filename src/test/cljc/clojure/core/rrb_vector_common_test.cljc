@@ -10,6 +10,35 @@
   #?@(:clj ((:import (clojure.lang ExceptionInfo)))))
 
 
+;;(def longer-generative-tests true)
+(def longer-generative-tests false)
+
+(def full-debug-opts {:trace false
+                      :validate true
+                      :return-value-checks
+                      [dv/edit-nodes-error-checks
+                       dv/basic-node-error-checks
+                       dv/ranges-error-checks]})
+
+(reset! dv/debug-opts {:catvec full-debug-opts
+                       :splice-rrbts full-debug-opts
+                       :slicev full-debug-opts
+                       :pop full-debug-opts
+                       :pop! full-debug-opts
+                       :transient full-debug-opts})
+
+;; TBD: Should this report method work when testing with
+;; ClojureScript, too?  I see the output when running tests with clj,
+;; but not cljs.
+
+(defmethod clojure.test/report :begin-test-var [m]
+  (println)
+  (println "----------------------------------------")
+  (println "starting" (:var m)))
+
+#_(defmethod clojure.test/report :end-test-var [m]
+  (println "finishing" (:var m)))
+
 ;; Enable tests to be run on versions of Clojure before 1.10, when
 ;; ex-message was added.
 
@@ -47,27 +76,6 @@
     (.-cause ex)))
 )
 
-(def full-debug-opts {
-                      ;;:trace true
-                      :trace false
-                      :validate true
-                      :return-value-checks
-                      [dv/edit-nodes-error-checks
-                       dv/basic-node-error-checks
-                       dv/ranges-error-checks]})
-
-(reset! dv/debug-opts {:catvec full-debug-opts
-                       :splice-rrbts full-debug-opts
-                       :slicev full-debug-opts
-                       :pop full-debug-opts
-                       :pop! full-debug-opts
-                       :transient full-debug-opts
-                       })
-
-
-;;(def longer-generative-tests true)
-(def longer-generative-tests false)
-
 (deftest test-slicing
   (println "deftest test-slicing")
   (testing "slicing"
@@ -95,7 +103,7 @@
     (is (dv/check-catvec 10 40 40 40 40 40 40 40 40))
     (is (apply dv/check-catvec (repeat 30 33)))))
 
-(deftest test-splicing-generative
+#_(deftest test-splicing-generative
   (println "deftest test-splicing-generative")
   (testing "splicing (generative)"
     (is (try (if longer-generative-tests
