@@ -20,7 +20,7 @@
                        dv/basic-node-error-checks
                        dv/ranges-error-checks]})
 
-(reset! dv/debug-opts {:catvec full-debug-opts
+(reset! dv/debug-opts {;;:catvec full-debug-opts
                        :splice-rrbts full-debug-opts
                        :slicev full-debug-opts
                        :pop full-debug-opts
@@ -262,6 +262,50 @@
   (doseq [kind #?(:clj [:object-array :long-array]
                   :cljs [:object-array])]
     (npe-for-1025-then-pop! kind)))
+
+
+;; This problem reproduction code is from CRRBV-17 ticket:
+;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-17
+
+(def benchmark-size 100000)
+
+(defn vector-push-f [v]
+  (loop [v v
+         i 0]
+    (when (or (zero? (mod i 10000))
+              (and (> i 99000) (zero? (mod i 100)))
+              (and (> i 99900)))
+      (println "i=" i))
+    (if (< i benchmark-size)
+      (recur (fv/catvec (fv/vector i) v)
+             (inc i))
+      v)))
+
+;; small variation of function above that uses dbg-catvec
+;; occasionally.  It would probably take many hours to get to the
+;; failing point by checking every single one.  The infinite loop does
+;; not happen until very close to iteration 100,000 - - somewhere over
+;; 99,000.
+
+(defn dbg-vector-push-f [v]
+  (loop [v v
+         i 0]
+    (let [check? (or (zero? (mod i 1000))
+                     (and (> i 99000) (zero? (mod i 100)))
+                     (> i 99800))]
+      (when check?
+        (println "i=" i))
+      (if (< i benchmark-size)
+        (recur (if check?
+                 (dv/dbg-catvec (fv/vector i) v)
+                 (fv/catvec (fv/vector i) v))
+               (inc i))
+        v))))
+
+(deftest test-crrbv-17
+  (println "deftest test-crrbv-17")
+  (is (= (reverse (range benchmark-size))
+         (vector-push-f (fv/vector)))))
 
 
 ;; This problem reproduction code is from a comment by Mike Fikes on
