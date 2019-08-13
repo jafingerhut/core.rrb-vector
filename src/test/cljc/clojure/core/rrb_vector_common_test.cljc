@@ -1,6 +1,7 @@
 (ns clojure.core.rrb-vector-common-test
   (:require [clojure.test :refer [deftest testing is are]]
-            [clojure.java.io :as io]
+            #?@(:clj ([clojure.java.io :as io]))
+            [clojure.edn :as edn]
             [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]
@@ -10,6 +11,12 @@
             [clojure.test.check.generators :as gen])
   #?@(:clj ((:import (clojure.lang ExceptionInfo)))))
 
+
+;; This is only intended to work on Node.js
+#?(:cljs
+   (do
+     (def cwd (.cwd js/process))
+     (def fs (js/require "fs"))))
 
 ;;(def longer-generative-tests true)
 (def longer-generative-tests false)
@@ -241,7 +248,13 @@
 
 (deftest test-crrbv-12
   (println "deftest test-crrbv-12")
-  (let [v (read-string (slurp (io/resource "clojure/core/crrbv-12-data.edn")))]
+  (let [base-fname "crrbv-12-data.edn"
+        fname #?(:clj (str "clojure/core/" base-fname)
+                 :cljs (str cwd "/src/test/cljc/clojure/core/" base-fname))
+        _ (println "fname=" fname)
+        file-content-str #?(:clj (slurp (io/resource fname))
+                            :cljs (.readFileSync fs fname "utf8"))
+        v (edn/read-string file-content-str)]
     (testing "Ascending order after quicksort"
       (is (ascending? (quicksort v)))))
   (testing "Repeated catvec followed by pop"
