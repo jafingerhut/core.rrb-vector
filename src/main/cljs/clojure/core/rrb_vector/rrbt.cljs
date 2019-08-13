@@ -856,6 +856,81 @@
             (aset new-rngs 32 i)))
         (array (->VectorNode nil new-arr) nil)))))
 
+;; TBD: I do not know if this implementation actually supports this
+;; many elements in one vector.  What is the limit?  I picked this
+;; number simply to match what I believe is the upper limit for the
+;; Clojure implementation.
+(def max-vector-elements 2147483647)
+
+;; Larger shift values than 64 definitely break assumptions all over
+;; the RRB vector implementation, e.g. (bit-shift-right 255 65)
+;; returns the same result as (bit-shift-right 255 1), I believe
+;; because the shift amount argument is effectively modulo'd by 64.
+;; Larger shift values than 30 are unlikely to make sense, given that
+;; the maximum number of vector elements supported is somewhere near
+;; 2^31-1.
+
+(defn shift-too-large? [v]
+  (> (.-shift v) 30))
+
+;; The maximum number of vector elements in a tree, not counting any
+;; elements in the tail, with a given shift value is:
+;;
+;; (bit-shift-left 1 (+ shift 5))
+;;
+;; It is perfectly normal to have vectors with a root tree node with
+;; only 1 non-nil child, so at a fraction 1/32 of maximum capacity.  I
+;; do not know the exact minimum fraction that RRB vectors as
+;; implemented here should allow, but I suspect it is well over
+;; 1/1024.
+
+(defn poor-branching? [v]
+  (let [tail-off (tail-offset v)]
+    (if (zero? tail-off)
+      false
+      (let [shift-amount (- (.-shift v) 5)
+            max-capacity-over-1024 (bit-shift-left 1 shift-amount)]
+        (< tail-off max-capacity-over-1024)))))
+
+;; Note 3:
+
+;; Consider measuring several ways in ClojureScript to create a
+;; regular persistent vector from another one, to see which is
+;; fastest, and use it here.
+
+;; TBD: Is there any promise about what metadata catvec returns?
+;; Always the same as on the first argument?
+(defn fallback-to-slow-splice-if-needed [v1 v2 splice-result]
+  (let [c1 (long (count v1))
+        c2 (long (count v2))]
+    (when (> (+ c1 c2) max-vector-elements)
+      (throw (js/Error.
+              (str "Attempted to concatenate two vectors whose total"
+                   " number of elements is " (+ c1 c2) ", which is"
+                   " larger than the maximum number of elements "
+                   max-vector-elements " supported in a vector "))))
+    (if-not (or (shift-too-large? splice-result)
+                (poor-branching? splice-result))
+      splice-result    ;; the fast result is good
+      (do
+        (println "splice-rrbts result had shift " (.-shift splice-result)
+                 " and " (tail-offset splice-result) " elements not counting"
+                 " the tail.  Falling back to slower method of concatenation.")
+        (if (poor-branching? v1)
+          ;; The v1 we started with was not good, either.
+          (do
+            (println "splice-rrbts first arg had shift " (.-shift v1)
+                     " and " (tail-offset v1) " elements not counting"
+                     " the tail.  Building the result from scratch.")
+            ;: See Note 3
+            (-> (empty v1) (into v1) (into v2)))
+          ;; Assume that v1 is balanced enough that we can use into to
+          ;; add all elements of v2 to it, without problems.  TBD:
+          ;; That assumption might be incorrect.  Consider checking
+          ;; the result of this, too, and fall back again to the true
+          ;; case above?
+          (into v1 v2))))))
+
 (defn splice-rrbts [v1 v2]
   (cond
     (zero? (count v1)) v2
@@ -904,24 +979,26 @@
           ncnt2   (if n2
                     ncnt2
                     0)]
-      (if n2
-        (let [arr      (make-array 33)
-              new-root (->VectorNode nil arr)]
-          (aset arr 0 n1)
-          (aset arr 1 n2)
-          (aset arr 32 (doto (make-array 33)
-                         (aset 0 ncnt1)
-                         (aset 1 (+ ncnt1 ncnt2))
-                         (aset 32 2)))
-          (Vector. (+ (count v1) (count v2)) (+ s 5) new-root (.-tail v2)
-                   nil nil))
-        (loop [r n1
-               s s]
-          (if (and (> s 5)
-                   (nil? (aget (.-arr r) 1)))
-            (recur (aget (.-arr r) 0) (- s 5))
-            (Vector. (+ (count v1) (count v2)) s r (.-tail v2)
-                     nil nil)))))))
+      (fallback-to-slow-splice-if-needed
+       v1 v2
+       (if n2
+         (let [arr      (make-array 33)
+               new-root (->VectorNode nil arr)]
+           (aset arr 0 n1)
+           (aset arr 1 n2)
+           (aset arr 32 (doto (make-array 33)
+                          (aset 0 ncnt1)
+                          (aset 1 (+ ncnt1 ncnt2))
+                          (aset 32 2)))
+           (Vector. (+ (count v1) (count v2)) (+ s 5) new-root (.-tail v2)
+                    nil nil))
+         (loop [r n1
+                s s]
+           (if (and (> s 5)
+                    (nil? (aget (.-arr r) 1)))
+             (recur (aget (.-arr r) 0) (- s 5))
+             (Vector. (+ (count v1) (count v2)) s r (.-tail v2)
+                      nil nil))))))))
 
 (deftype Transient [^:mutable cnt
                     ^:mutable shift
