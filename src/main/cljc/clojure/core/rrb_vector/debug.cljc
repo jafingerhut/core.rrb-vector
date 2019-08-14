@@ -993,7 +993,8 @@
     (pd/same-coll? v1 v2)))
 
 (defn check-catvec [& counts]
-  (let [ranges (map range counts)
+  (let [prefix-sums (reductions + counts)
+        ranges (map range (cons 0 prefix-sums) prefix-sums)
         v1 (apply concat ranges)
         v2 (apply dbg-catvec (map fv/vec ranges))]
     (pd/same-coll? v1 v2)))
