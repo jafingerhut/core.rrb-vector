@@ -1,4 +1,7 @@
 (ns clojure.core.rrb-vector.nodes
+  (:refer-clojure :exclude [assert])
+  (:require [clojure.core.rrb-vector.clj-macros
+             :refer [assert dbg]])
   (:import (clojure.core VecNode ArrayManager)
            (clojure.lang PersistentVector PersistentVector$Node)
            (java.util.concurrent.atomic AtomicReference)))

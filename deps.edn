@@ -31,6 +31,11 @@
   :cljs-test {:main-opts ["-m" "cljs.main"
                           "-re" "node"
                           "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :clj-testlong {:main-opts ["-e"
+                             "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
+  :cljs-testlong {:main-opts ["-m" "cljs.main"
+                              "-re" "node"
+                              "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
   ;; Using collections-check requires these minimum
   ;; versions of Clojure and test.check
   :check {:extra-paths ["src/test_local/clojure"]

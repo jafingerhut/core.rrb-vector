@@ -1,14 +1,15 @@
 (ns clojure.core.rrb-vector-common-test
   (:require [clojure.test :refer [deftest testing is are]]
+            [clojure.core.rrb-test-infra
+             :refer [full-debug-opts set-debug-opts! ex-message-copy
+                     ex-cause-copy]]
             #?@(:clj ([clojure.java.io :as io]))
             [clojure.edn :as edn]
             [clojure.core.rrb-vector :as fv]
+            [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]
             [clojure.core.rrb-vector.debug-platform-dependent :as dpd]
-            [clojure.core.reducers :as r]
-            [clojure.test.check :as tc]
-            [clojure.test.check.properties :as prop]
-            [clojure.test.check.generators :as gen])
+            [clojure.core.reducers :as r])
   #?@(:clj ((:import (clojure.lang ExceptionInfo)))))
 
 
@@ -18,22 +19,7 @@
      (def cwd (.cwd js/process))
      (def fs (js/require "fs"))))
 
-;;(def longer-generative-tests true)
-(def longer-generative-tests false)
-
-(def full-debug-opts {:trace false
-                      :validate true
-                      :return-value-checks
-                      [dv/edit-nodes-error-checks
-                       dv/basic-node-error-checks
-                       dv/ranges-error-checks]})
-
-(reset! dv/debug-opts {;;:catvec full-debug-opts
-                       :splice-rrbts full-debug-opts
-                       :slicev full-debug-opts
-                       :pop full-debug-opts
-                       :pop! full-debug-opts
-                       :transient full-debug-opts})
+(set-debug-opts! full-debug-opts)
 
 ;; TBD: Should this report method work when testing with
 ;; ClojureScript, too?  I see the output when running tests with clj,
@@ -47,82 +33,59 @@
 #_(defmethod clojure.test/report :end-test-var [m]
   (println "finishing" (:var m)))
 
-;; Enable tests to be run on versions of Clojure before 1.10, when
-;; ex-message was added.
-
-#?(:clj
-(defn ex-message-copy
-  "Returns the message attached to ex if ex is a Throwable.
-  Otherwise returns nil."
-  {:added "1.10"}
-  [ex]
-  (when (instance? Throwable ex)
-    (.getMessage ^Throwable ex)))
-:cljs
-(defn ex-message-copy
-  "Returns the message attached to the given Error / ExceptionInfo object.
-  For non-Errors returns nil."
-  [ex]
-  (when (instance? js/Error ex)
-    (.-message ex))))
-
-#?(:clj
-(defn ex-cause-copy
-  "Returns the cause of ex if ex is a Throwable.
-  Otherwise returns nil."
-  {:added "1.10"}
-  [ex]
-  (when (instance? Throwable ex)
-    (.getCause ^Throwable ex)))
-:cljs
-(defn ex-cause-copy
-  "Returns exception cause (an Error / ExceptionInfo) if ex is an
-  ExceptionInfo.
-  Otherwise returns nil."
-  [ex]
-  (when (instance? ExceptionInfo ex)
-    (.-cause ex)))
-)
-
 (deftest test-slicing
   (println "deftest test-slicing")
   (testing "slicing"
     (is (dv/check-subvec 32000 10 29999 1234 18048 10123 10191))))
 
-(deftest test-slicing-generative
-  (println "deftest test-slicing-generative")
-  (testing "slicing (generative)"
-    ;; TBD: What does dv/generative-check-subvec return on success?
-    (is (try (if longer-generative-tests
-               (dv/generative-check-subvec 250 200000 20)
-               (dv/generative-check-subvec 125 100000 10))
-             (catch ExceptionInfo e
-               (throw (ex-info (dpd/format "%s: %s %s"
-                                           (ex-message-copy e)
-                                           (:init-cnt (ex-data e))
-                                           (:s&es (ex-data e)))
-                               {}
-                               (ex-cause-copy e))))))))
+;; Moved deftest test-slicing-generative and test-splicing-generative
+;; to a separate namespace, to more easily control when they are run
+;; vs. when they are not.  They can take significantly longer than the
+;; other tests in this namespace.
 
 (deftest test-splicing
   (println "deftest test-splicing")
   (testing "splicing"
     (is (dv/check-catvec 1025 1025 3245 1025 32768 1025 1025 10123 1025 1025))
     (is (dv/check-catvec 10 40 40 40 40 40 40 40 40))
-    (is (apply dv/check-catvec (repeat 30 33)))))
+    (is (apply dv/check-catvec (repeat 30 33)))
+    (is (dv/check-catvec 26091 31388 1098 43443 46195 4484 48099 7905
+                         13615 601 13878 250 10611 9271 53170))
 
-#_(deftest test-splicing-generative
-  (println "deftest test-splicing-generative")
-  (testing "splicing (generative)"
-    (is (try (if longer-generative-tests
-               (dv/generative-check-catvec 250 30 10 60000)
-               (dv/generative-check-catvec 125 15 10 30000))
-             (catch ExceptionInfo e
-               (throw (ex-info (dpd/format "%s: %s"
-                                           (ex-message-copy e)
-                                           (:cnts (ex-data e)))
-                               {}
-                               (ex-cause-copy e))))))))
+    ;; Order that catvec will perform splicev calls:
+    (let [counts [26091 31388 1098 43443 46195 4484 48099 7905
+                  13615 601 13878 250 10611 9271 53170]
+
+          prefix-sums (reductions + counts)
+          ranges (map range (cons 0 prefix-sums) prefix-sums)
+
+          [v01 v02 v03 v04 v05 v06 v07 v08
+           v09 v10 v11 v12 v13 v14 v15] (map fv/vec ranges)
+
+          v01-02 (dv/dbg-splicev v01 v02)  ;; top level catvec call
+          v03-04 (dv/dbg-splicev v03 v04)  ;; top level catvec call
+          v01-04 (dv/dbg-splicev v01-02 v03-04)  ;; top level catvec call
+
+          v05-06 (dv/dbg-splicev v05 v06)  ;; recurse level 1 catvec call
+          v07-08 (dv/dbg-splicev v07 v08)  ;; recurse level 1 catvec call
+          v05-08 (dv/dbg-splicev v05-06 v07-08)  ;; recurse level 1 catvec call
+
+          v09-10 (dv/dbg-splicev v09 v10)  ;; recurse level 2 catvec call
+          v11-12 (dv/dbg-splicev v11 v12)  ;; recurse level 2 catvec call
+          v09-12 (dv/dbg-splicev v09-10 v11-12)  ;; recurse level 2 catvec call
+
+          v13-14 (dv/dbg-splicev v13 v14)  ;; recurse level 3 catvec call
+          v13-15 (dv/dbg-splicev v13-14 v15)  ;; recurse level 3 catvec call
+
+          v09-15 (dv/dbg-splicev v09-12 v13-15)  ;; recurse level 2 catvec call
+
+          v05-15 (dv/dbg-splicev v05-08 v09-15)  ;; recurse level 1 catvec call
+
+          v01-15 (dv/dbg-splicev v01-04 v05-15)  ;; top level catvec call
+
+          exp-val (range (last prefix-sums))]
+      (is (= -1 (dv/first-diff v01-15 exp-val)))
+      (is (= -1 (dv/first-diff (into v01-04 v05-15) exp-val))))))
 
 (deftest test-reduce
   (println "deftest test-reduce")
@@ -305,58 +268,6 @@
   (doseq [kind #?(:clj [:object-array :long-array]
                   :cljs [:object-array])]
     (npe-for-1025-then-pop! kind)))
-
-
-;; This problem reproduction code is from CRRBV-17 ticket:
-;; https://clojure.atlassian.net/projects/CRRBV/issues/CRRBV-17
-
-(def benchmark-size 100000)
-
-;; This small variation of the program in the ticket simply does
-;; progress debug printing occasionally, as well as extra debug
-;; checking of the results occasionally.
-
-;; If you enable the printing of the message that begins
-;; with "splice-rrbts result had shift" in function
-;; fallback-to-slow-splice-if-needed, then run this test, you will see
-;; it called hundreds or perhaps thousands of times.  The fallback
-;; approach is effective at avoiding a crash for this scenario, but at
-;; a dramatic extra run-time cost.
-
-(defn vector-push-f [v]
-  (loop [v v
-         i 0]
-    (let [check? (or (zero? (mod i 10000))
-                     (and (> i 99000) (zero? (mod i 100)))
-                     (and (> i 99900)))]
-      (when check?
-        (println "i=" i))
-      (if (< i benchmark-size)
-        (recur (if check?
-                 (dv/dbg-catvec (fv/vector i) v)
-                 (fv/catvec (fv/vector i) v))
-               (inc i))
-        v))))
-
-(defn dbg-vector-push-f [v]
-  (loop [v v
-         i 0]
-    (let [check? (or (zero? (mod i 1000))
-                     (and (> i 99000) (zero? (mod i 100)))
-                     (> i 99800))]
-      (when check?
-        (println "i=" i))
-      (if (< i benchmark-size)
-        (recur (if check?
-                 (dv/dbg-catvec (fv/vector i) v)
-                 (fv/catvec (fv/vector i) v))
-               (inc i))
-        v))))
-
-(deftest test-crrbv-17
-  (println "deftest test-crrbv-17")
-  (is (= (reverse (range benchmark-size))
-         (vector-push-f (fv/vector)))))
 
 
 ;; This problem reproduction code is from a comment by Mike Fikes on

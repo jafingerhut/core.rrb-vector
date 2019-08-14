@@ -1,6 +1,9 @@
 (ns clojure.core.rrb-vector.transients
+  (:refer-clojure :exclude [assert])
   (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range dbgln
-                                                   int-array?]])
+                                                   int-array?]]
+            [clojure.core.rrb-vector.clj-macros
+             :refer [assert dbg]])
   (:import (clojure.core.rrb_vector.nodes NodeManager)
            (clojure.core ArrayManager)
            (java.util.concurrent.atomic AtomicReference)))
