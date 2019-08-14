@@ -4,6 +4,8 @@
              :refer [PSliceableVector slicev
                      PSpliceableVector splicev
                      PTransientDebugAccess]]
+            [clojure.core.rrb-vector.clj-macros
+             :refer [assert dbg]]
             [clojure.core.rrb-vector.nodes
              :refer [ranges overflow? last-range regular-ranges
                      first-child last-child remove-leftmost-child
@@ -25,19 +27,6 @@
 
 (def ^:const rrbt-concat-threshold 33)
 (def ^:const max-extra-search-steps 2)
-
-(def ^:const elide-assertions? true)
-(def ^:const elide-debug-printouts? true)
-
-(defmacro assert [& args]
-  (if-not elide-assertions?
-    (apply #'clojure.core/assert &form &env args)))
-
-(defmacro dbg [& args]
-  (if-not elide-debug-printouts?
-    `(prn ~@args)))
-
-(defmacro dbg- [& args])
 
 (defn throw-unsupported []
   (throw (UnsupportedOperationException.)))
