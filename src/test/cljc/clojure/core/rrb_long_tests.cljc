@@ -71,9 +71,8 @@
                      (and (> i 99900)))]
       (when check?
         (println "i=" i
-                 ;;"fallback-count1=" @#'rrbt/fallback-to-slow-splice-count1
-                 ;;"fallback-count2=" @#'rrbt/fallback-to-slow-splice-count2
-                 ))
+                 "fallback-count1=" @rrbt/fallback-to-slow-splice-count1
+                 "fallback-count2=" @rrbt/fallback-to-slow-splice-count2))
       (if (< i benchmark-size)
         (recur (if check?
                  (dv/dbg-catvec (fv/vector i) v)
