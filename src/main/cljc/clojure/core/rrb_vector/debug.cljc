@@ -418,7 +418,7 @@
           ;; max capacity.  1/32 full is normal when a tree becomes 1
           ;; deeper than it was before.
           (< 0 (:count x) (max-capacity-over-1024 root-shift))
-          {:error true, :kind :root,
+          {:error false, :warning true, :kind :root-too-deep,
            :description (str "For root shift=" root-shift " the maximum "
                              "capacity divided by 1024 is "
                              (max-capacity-over-1024 root-shift)
@@ -754,7 +754,16 @@
       (println (str "ERROR: found problem with ret value from " err-desc-str
                     ": " (:description i)))
       (record-failure-data {:err-desc-str err-desc-str, :ret ret,
-                            :args args, :ranges-errors i}))))
+                            :args args, :ranges-errors i}))
+    (when (:warning i)
+      ;; It is perfectly normal for fv/subvec and slicev to return a
+      ;; vector that causes this warning.
+      (when-not (and (= err-desc-str "slicev")
+                     (= :root-too-deep (:kind i)))
+        (println (str "WARNING: For ret value from " err-desc-str
+                      ": " (:description i)))
+        (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                              :args args, :ranges-errors i})))))
 
 (defn validating-pop [f err-desc-str coll]
   (let [coll-seq (copying-seq coll)
