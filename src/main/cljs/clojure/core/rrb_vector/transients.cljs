@@ -1,8 +1,10 @@
 (ns clojure.core.rrb-vector.transients
-  (:refer-clojure :exclude [new-path])
+  (:refer-clojure :exclude [assert new-path])
   (:require [clojure.core.rrb-vector.nodes
              :refer [regular? clone node-ranges last-range overflow?]]
-            [clojure.core.rrb-vector.trees :refer [tail-offset new-path]]))
+            [clojure.core.rrb-vector.trees :refer [tail-offset new-path]])
+  (:require-macros [clojure.core.rrb-vector.macros
+                    :refer [assert max-tree-capacity-elems]]))
 
 (defn ensure-editable [edit node]
   (if (identical? (.-edit node) edit)
@@ -36,6 +38,7 @@
 ;; call at most recent recursive push-tail! call that has an empty
 ;; slot available.
 (defn push-tail! [shift cnt root-edit current-node tail-node]
+  (assert (<= cnt (max-tree-capacity-elems shift)))
   (let [ret (ensure-editable root-edit current-node)]
     (if (regular? ret)
       (do (loop [n ret shift shift]
@@ -60,12 +63,16 @@
             cret (if (== shift 5)
                    nil
                    (let [child (ensure-editable root-edit (aget arr li))
-                         ccnt  (if (pos? li)
-                                 (- (aget rngs li) (aget rngs (dec li)))
-                                 (aget rngs 0))]
+                         ccnt  (+ (if (pos? li)
+                                    (- (aget rngs li) (aget rngs (dec li)))
+                                    (aget rngs 0))
+                                  ;; add 32 elems to account for the
+                                  ;; new 32-elem tail we plan to add
+                                  ;; to the subtree.
+                                  32)]
                      ;; See Note 2
                      (if-not (overflow? child (- shift 5) ccnt)
-                       (push-tail! (- shift 5) (inc ccnt) root-edit
+                       (push-tail! (- shift 5) ccnt root-edit
                                    child
                                    tail-node))))]
         (if cret

@@ -99,8 +99,10 @@
 
 (defn overflow? [^NodeManager nm root shift cnt]
   (if (.regular nm root)
-    (> (bit-shift-right (unchecked-inc-int (int cnt)) (int 5))
-       (bit-shift-left (int 1) (int shift)))
+    (do
+      (assert (zero? (mod cnt 32)))
+      (> (bit-shift-right (unchecked-inc-int (int cnt)) (int 5))
+         (bit-shift-left (int 1) (int shift))))
     (let [rngs (ranges nm root)
           slc  (aget rngs 32)]
       (and (== slc (int 32))

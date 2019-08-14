@@ -1,7 +1,10 @@
 (ns clojure.core.rrb-vector.trees
-  (:refer-clojure :exclude [array-for push-tail pop-tail new-path do-assoc])
+  (:refer-clojure :exclude [array-for push-tail pop-tail new-path do-assoc
+                            assert])
   (:require [clojure.core.rrb-vector.nodes
-             :refer [regular? clone node-ranges last-range overflow?]]))
+             :refer [regular? clone node-ranges last-range overflow?]])
+  (:require-macros [clojure.core.rrb-vector.macros
+                    :refer [assert max-tree-capacity-elems]]))
 
 (defn tail-offset [vec]
   (let [cnt (.-cnt vec)
@@ -65,6 +68,7 @@
           (recur (+ s 5) ret))))))
 
 (defn push-tail [shift cnt root-edit current-node tail-node]
+  (assert (<= cnt (max-tree-capacity-elems shift)))
   (if (regular? current-node)
     (let [arr (aclone (.-arr current-node))
           ret (->VectorNode (.-edit current-node) arr)]
@@ -91,12 +95,16 @@
           cret (if (== shift 5)
                  nil
                  (let [child (aget arr li)
-                       ccnt  (if (pos? li)
-                               (- (aget rngs li) (aget rngs (dec li)))
-                               (aget rngs 0))]
+                       ccnt  (+ (if (pos? li)
+                                  (- (aget rngs li) (aget rngs (dec li)))
+                                  (aget rngs 0))
+                                ;; add 32 elems to account for the new
+                                ;; 32-elem tail we plan to add to the
+                                ;; subtree.
+                                32)]
                    ;; See Note 2 in file transients.cljs
                    (if-not (overflow? child (- shift 5) ccnt)
-                     (push-tail (- shift 5) (inc ccnt) root-edit
+                     (push-tail (- shift 5) ccnt root-edit
                                 child
                                 tail-node))))]
       (if cret
@@ -109,7 +117,7 @@
                              " object array to become a node, when that"
                              " index should only be used for storing"
                              " range arrays.")
-                    data {:shift shift, :cnd cnt, :current-node current-node,
+                    data {:shift shift, :cnt cnt, :current-node current-node,
                           :tail-node tail-node, :rngs rngs, :li li,
                           :cret cret}]
                 (throw (ex-info msg data))))

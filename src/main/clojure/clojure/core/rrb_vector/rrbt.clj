@@ -5,7 +5,7 @@
                      PSpliceableVector splicev
                      PTransientDebugAccess]]
             [clojure.core.rrb-vector.clj-macros
-             :refer [assert dbg]]
+             :refer [assert dbg max-tree-capacity-elems]]
             [clojure.core.rrb-vector.nodes
              :refer [ranges overflow? last-range regular-ranges
                      first-child last-child remove-leftmost-child
@@ -817,6 +817,7 @@
   ;; Note 2: See the corresponding Note 2 for the pushTail method in
   ;; transients.clj.
   (pushTail [this shift cnt node tail-node]
+    (assert (<= cnt (max-tree-capacity-elems shift)))
     (if (.regular nm node)
       (let [arr (aclone ^objects (.array nm node))
             ret (.node nm (.edit nm node) arr)]
@@ -844,18 +845,23 @@
             cret (if (== shift (int 5))
                    nil
                    (let [child (aget ^objects arr li)
-                         ccnt  (if (pos? li)
-                                 (unchecked-subtract-int
-                                  (aget rngs li)
-                                  (aget rngs (unchecked-dec-int li)))
-                                 (aget rngs 0))]
+                         ccnt  (unchecked-add-int
+                                (int (if (pos? li)
+                                       (unchecked-subtract-int
+                                        (aget rngs li)
+                                        (aget rngs (unchecked-dec-int li)))
+                                       (aget rngs 0)))
+                                ;; add 32 elems to account for the new
+                                ;; 32-elem tail we plan to add to the
+                                ;; subtree.
+                                (int 32))]
                      ;; See Note 2
                      (if-not (overflow? nm child
                                         (unchecked-subtract-int shift (int 5))
                                         ccnt)
                        (.pushTail this
                                   (unchecked-subtract-int shift (int 5))
-                                  (unchecked-inc-int ccnt)
+                                  ccnt
                                   (aget ^objects arr li)
                                   tail-node))))]
         (if cret
@@ -868,7 +874,7 @@
                                " object array to become a node, when that"
                                " index should only be used for storing"
                                " range arrays.")
-                      data {:shift shift, :cnd cnt, :node node,
+                      data {:shift shift, :cnt cnt, :node node,
                             :tail-node tail-node, :rngs rngs, :li li,
                             :cret cret}]
                   (throw (ex-info msg data))))

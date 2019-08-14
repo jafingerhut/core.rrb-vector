@@ -14,6 +14,9 @@
 
 (defmacro dbg- [& args])
 
+(defmacro max-tree-capacity-elems [shift]
+  `(bit-shift-left 1 (unchecked-add-int (int ~shift) (int 5))))
+
 (defmacro ^:private gen-vector-method [& params]
   (let [arr (gensym "arr__")]
     `(let [~arr (cljs.core/make-array ~(count params))]

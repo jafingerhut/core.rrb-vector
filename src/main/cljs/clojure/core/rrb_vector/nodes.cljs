@@ -1,5 +1,6 @@
 (ns clojure.core.rrb-vector.nodes
-  (:refer-clojure :exclude [clone]))
+  (:refer-clojure :exclude [clone assert])
+  (:require-macros [clojure.core.rrb-vector.macros :refer [assert]]))
 
 ;;; node ops
 
@@ -36,8 +37,10 @@
 
 (defn overflow? [root shift cnt]
   (if (regular? root)
-    (> (bit-shift-right cnt 5)
-       (bit-shift-left 1 shift))
+    (do
+      (assert (zero? (mod cnt 32)))
+      (> (bit-shift-right cnt 5)
+         (bit-shift-left 1 shift)))
     (let [rngs (node-ranges root)
           slc  (aget rngs 32)]
       (and (== slc 32)

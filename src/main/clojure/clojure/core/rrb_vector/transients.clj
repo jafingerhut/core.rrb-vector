@@ -1,9 +1,8 @@
 (ns clojure.core.rrb-vector.transients
   (:refer-clojure :exclude [assert])
-  (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range
-                                                   overflow?]]
+  (:require [clojure.core.rrb-vector.nodes :refer [ranges last-range overflow?]]
             [clojure.core.rrb-vector.clj-macros
-             :refer [assert dbg]])
+             :refer [assert dbg max-tree-capacity-elems]])
   (:import (clojure.core.rrb_vector.nodes NodeManager)
            (clojure.core ArrayManager)
            (java.util.concurrent.atomic AtomicReference)))
@@ -105,6 +104,7 @@
     ;; pushTail in hopes that it succeeds, but return failure on full,
     ;; e.g. return nil.
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
+      (assert (<= cnt (max-tree-capacity-elems shift)))
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]
         (if (.regular nm ret)
           (do (loop [n ret shift shift]
@@ -143,18 +143,23 @@
                                                     (aget ^objects arr li)
                                                     (unchecked-subtract-int
                                                      shift 5))
-                             ccnt  (if (pos? li)
-                                     (unchecked-subtract-int
-                                      (aget rngs li)
-                                      (aget rngs (unchecked-dec-int li)))
-                                     (aget rngs 0))]
+                             ccnt  (unchecked-add-int
+                                    (int (if (pos? li)
+                                           (unchecked-subtract-int
+                                            (aget rngs li)
+                                            (aget rngs (unchecked-dec-int li)))
+                                           (aget rngs 0)))
+                                    ;; add 32 elems to account for the
+                                    ;; new 32-elem tail we plan to add
+                                    ;; to the subtree.
+                                    (int 32))]
                          ;; See Note 2
                          (if-not (overflow? nm child
                                             (unchecked-subtract-int shift 5)
                                             ccnt)
                            (.pushTail this nm am
                                       (unchecked-subtract-int shift 5)
-                                      (unchecked-inc-int ccnt)
+                                      ccnt
                                       root-edit
                                       child
                                       tail-node))))]
