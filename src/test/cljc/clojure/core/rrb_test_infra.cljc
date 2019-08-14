@@ -18,6 +18,18 @@
                          :pop! opts
                          :transient opts}))
 
+(defmethod clojure.test/report #?(:clj :begin-test-var
+                                  :cljs [:cljs.test/default :begin-test-var])
+  [m]
+  (println)
+  (println "----------------------------------------")
+  (println "starting" (:var m)))
+
+#_(defmethod clojure.test/report #?(:clj :end-test-var
+                                  :cljs [:cljs.test/default :end-test-var])
+  [m]
+  (println "finishing" (:var m)))
+
 ;; Enable tests to be run on versions of Clojure before 1.10, when
 ;; ex-message was added.
 

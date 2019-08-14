@@ -19,7 +19,6 @@
 (set-debug-opts! full-debug-opts)
 
 (deftest test-slicing-generative
-  (println "deftest test-slicing-generative")
   (testing "slicing (generative)"
     ;; TBD: What does dv/generative-check-subvec return on success?
     (is (try (if longer-generative-tests
@@ -34,7 +33,6 @@
                                (ex-cause-copy e))))))))
 
 (deftest test-splicing-generative
-  (println "deftest test-splicing-generative")
   (testing "splicing (generative)"
     (is (try (if longer-generative-tests
                (dv/generative-check-catvec 250 30 10 60000)
@@ -82,6 +80,5 @@
         v))))
 
 (deftest test-crrbv-17
-  (println "deftest test-crrbv-17")
   (is (= (reverse (range benchmark-size))
          (vector-push-f (fv/vector)))))
