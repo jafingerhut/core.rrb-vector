@@ -738,6 +738,11 @@
       (println (str "ERROR: found problem with ret value from " err-desc-str
                     ": " (:description i)))
       (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+                            :args args, :edit-nodes-errors i}))
+    (when (:warning i)
+      (println (str "WARNING: possible issue with ret value from " err-desc-str
+                    ": " (:description i)))
+      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
                             :args args, :edit-nodes-errors i}))))
 
 (defn basic-node-error-checks [err-desc-str ret & args]

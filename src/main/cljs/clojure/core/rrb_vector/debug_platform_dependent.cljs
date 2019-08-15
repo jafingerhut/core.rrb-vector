@@ -138,10 +138,13 @@
 
       (and (persistent-vector? v)
            (not root-edit-is-nil?))
-      {:error true
+      {:error false, :warning true,
        :description (str "A persistent vector with type " (pr-str (type v))
                          " has a root edit property with value " root-edit
-                         " - expecting nil")
+                         " - often this is nil instead."
+                         " It requires more thought to be certain"
+                         " whether this could lead to problems,"
+                         " hence why this is only a warning")
        :data v}
 
       :else
