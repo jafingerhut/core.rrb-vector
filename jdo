@@ -28,6 +28,9 @@ test*)
 long*)
     # Run long/generative tests
     exec clj -A:clj:clj-test:clj-runlongtests ;;
+coll*)
+    # Run collection-check generative tests
+    exec clj -A:clj:clj-test:clj-check:clj-runcheck ;;
 east*|lint*)
     # Run Eastwood
     exec clojure -A:clj:clj-test:check:eastwood ;;

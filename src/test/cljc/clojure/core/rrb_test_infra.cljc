@@ -18,17 +18,36 @@
                          :pop! opts
                          :transient opts}))
 
+(defn now-msec []
+  #?(:clj (System/currentTimeMillis)
+     ;; Only intended to work for Node.js right now
+     :cljs (js/Date.now)))
+
+(def num-deftests-started (atom 0))
+(def last-deftest-start-time (atom nil))
+
 (defmethod clojure.test/report #?(:clj :begin-test-var
                                   :cljs [:cljs.test/default :begin-test-var])
   [m]
+  (let [n (swap! num-deftests-started inc)]
+    (when (== n 1)
+      (println "----------------------------------------")
+      #?(:clj (let [p (System/getProperties)]
+                (println "java.vm.name" (get p "java.vm.name"))
+                (println "java.vm.version" (get p "java.vm.version"))
+                (println "(clojure-version)" (clojure-version)))
+         :cljs (println "*clojurescript-version*" *clojurescript-version*))))
   (println)
   (println "----------------------------------------")
-  (println "starting" (:var m)))
+  (println "starting" (:var m))
+  (reset! last-deftest-start-time (now-msec)))
 
-#_(defmethod clojure.test/report #?(:clj :end-test-var
+(defmethod clojure.test/report #?(:clj :end-test-var
                                   :cljs [:cljs.test/default :end-test-var])
   [m]
-  (println "finishing" (:var m)))
+  ;;(println "finished" (:var m))
+  (println "elapsed time (sec)" (/ (- (now-msec) @last-deftest-start-time)
+                                   1000.0)))
 
 ;; Enable tests to be run on versions of Clojure before 1.10, when
 ;; ex-message was added.

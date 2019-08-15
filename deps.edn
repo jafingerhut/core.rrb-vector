@@ -38,12 +38,24 @@
                                   "-re" "node"
                                   "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
 
-  ;; Using collections-check requires these minimum
-  ;; versions of Clojure and test.check
-  :check {:extra-paths ["src/test_local/clojure"]
-          :extra-deps {collection-check {:mvn/version "0.1.7"}
-                       org.clojure/clojure {:mvn/version "1.7.0"}
-                       org.clojure/test.check {:mvn/version "0.9.0"}}}
+  ;; Using collections-check requires this minimum version of
+  ;; test.check, and at least Clojure 1.7.0
+  :clj-check {:extra-paths ["src/test_local/cljc"]
+              :extra-deps {collection-check {:mvn/version "0.1.7"}
+                           com.gfredericks/test.chuck {:mvn/version "0.2.10"}
+                           org.clojure/test.check {:mvn/version "0.9.0"}}}
+  :clj-runcheck {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-check),(t/run-tests,'clojure.core.rrb-vector-check)"]}
+  :cljs-check {:extra-paths ["src/test_local/cljc"]
+               :extra-deps {collection-check {:mvn/version "0.1.7"}
+                            com.gfredericks/test.chuck {:mvn/version "0.2.10"}
+                            org.clojure/test.check {:mvn/version "0.9.0"}}}
+  ;; I tried running collection-check on ClojureScript with Node, but
+  ;; it quickly threw a NoClassDefFoundError for class
+  ;; clojure/lang/Tuple.  It looks like it might require modifications
+  ;; to collection-check code in order to make this work?
+  :cljs-runcheck {:main-opts ["-m" "cljs.main"
+                              "-re" "node"
+                              "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-check),(t/run-tests,'clojure.core.rrb-vector-check)"]}
   ;; I have tried using cljs-test-runner for running clojure.test
   ;; tests in a modified version of core.rrb-vector, but my guess is
   ;; that since an older version of core.rrb-vector (version 0.0.11)
