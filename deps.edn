@@ -1,41 +1,45 @@
-;; Useful commands:
+;; See shell scripts 'sdo' and 'jdo' for sample useful combinations of
+;; aliases to use to acommplish common tasks.
 
-;; Start a socket REPL for Clojure/Java
-;; clj -A:jvm:clj-socket
+;; One way to specify a local version of ClojureScript, in case you
+;; want to test with modifications to it:
+;; org.clojure/clojurescript {:local/root "/Users/jafinger/clj/clojurescript"}
 
-;; Run tests for Clojure/Java
-;; clj -A:jvm:test:clj-test
-
-;; Start a Node-based socket REPL for ClojureScript
-;; clj -A:cljs-socket
-
-;; Run tests for ClojureScript
-;; clj -A:test:cljs-test
-
-;; Run Eastwood on Clojure version of code:
-;; clj -A:eastwood:test:check
-
-{:paths ["src/main/clojure" "src/main/cljs" "src/main/cljc"]
- :deps {org.clojure/clojurescript {:mvn/version "1.10.520"}
-        ;;org.clojure/clojurescript {:local/root "/Users/jafinger/clj/clojurescript"}
-        }
+{:paths ["src/main/cljc"]
  :aliases
- {;; - start a Clojure/Java Socket REPL on port 50505
+ {;; Common alias to use for all Clojure/Java commands
+  :clj {:extra-paths ["src/main/clojure"]
+        :jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
+  ;; Common alias to use for all ClojureScript commands
+  :cljs {:extra-paths ["src/main/cljs"]
+         :extra-deps {org.clojure/clojurescript {:mvn/version "1.10.520"}}
+         :jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
+
+  ;; - start a Clojure/Java Socket REPL on port 50505
   :clj-socket {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,clojure.core.server/repl}"]}
   ;; start a Node-based ClojureScript socket REPL on port 50505
   :cljs-socket {:jvm-opts ["-Dclojure.server.repl={:port,50505,:accept,cljs.server.node/repl}"]}
-  :jvm {:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
-  :test {:extra-paths ["src/test/clojure" "src/test/cljs" "src/test/cljc"]
-         :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
-  :clj-test {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
-  :cljs-test {:main-opts ["-m" "cljs.main"
+
+  ;; Common alias to use for all Clojure/Java commands that run tests
+  :clj-test {:extra-paths ["src/test/clojure" "src/test/cljc"]
+             :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
+  ;; Common alias to use for all ClojureScript commands that run tests
+  :cljs-test {:extra-paths ["src/test/cljs" "src/test/cljc"]
+              :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
+
+  ;; Run 'short' tests
+  :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :cljs-runt {:main-opts ["-m" "cljs.main"
                           "-re" "node"
                           "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
-  :clj-testlong {:main-opts ["-e"
-                             "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
-  :cljs-testlong {:main-opts ["-m" "cljs.main"
-                              "-re" "node"
-                              "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
+
+  ;; Run generative and/or 'long' tests
+  :clj-runlongtests {:main-opts ["-e"
+                                 "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
+  :cljs-runlongtests {:main-opts ["-m" "cljs.main"
+                                  "-re" "node"
+                                  "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-long-tests),(t/run-tests,'clojure.core.rrb-long-tests)"]}
+
   ;; Using collections-check requires these minimum
   ;; versions of Clojure and test.check
   :check {:extra-paths ["src/test_local/clojure"]
@@ -69,7 +73,7 @@
                      {:mvn/version "0.4.0"}}}
   :eastwood {:extra-deps {jonase/eastwood {:mvn/version "0.3.5"}}
              :main-opts ["-m" "eastwood.lint"
-                         "{:source-paths,[\"src/main/clojure\"],:test-paths,[\"src/test/clojure\",\"src/test_local/clojure\"],:add-linters,[:unused-fn-args,:unused-locals,:unused-namespaces,:unused-private-vars],:exclude-linters,[:implicit-dependencies],:exclude-namespaces,[]}"]}
+                         "{:source-paths,[\"src/main/clojure\"],:test-paths,[\"src/test/clojure\",\"src/test/cljs\",\"src/test_local/clojure\"],:add-linters,[:unused-fn-args,:unused-locals,:unused-namespaces,:unused-private-vars],:exclude-linters,[:implicit-dependencies],:exclude-namespaces,[]}"]}
 
   ;; pull in specific versions of Clojure:
   :1.5    {:override-deps {org.clojure/clojure {:mvn/version "1.5.1"}}}
