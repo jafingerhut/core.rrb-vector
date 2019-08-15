@@ -6,7 +6,7 @@
             [clojure.core.rrb-test-infra]))
 
 (deftest collection-check
-  (let [p 10000]
+  (let [p 50000]
     (println "assert-vector-like" p "(fv/vector) gen/int)")
     (assert-vector-like p (fv/vector) gen/int))
   (is (every? nil? (.-array ^clojure.lang.PersistentVector$Node
@@ -79,4 +79,16 @@
 ;; 1000 - ~ 105 sec
 ;; 2000 - ~ 190 sec
 ;; 5000 - ~ 485 sec
-;; 10000 - ~ tbd
+;; 10000 - ~ 1070 sec
+;; 50000 - ~ 5273 sec
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ClojureScript results:
+;; 2015 era MacBook Pro, macOS 10.13.6
+;; VirtualBox Ubuntu 18.04.3 Desktop Linux
+;; OpenJDK 11.0.4
+;; Node.js version 8.10.0
+;; ClojureScript 1.10.520
+
+;; 250 - ~ 42 sec
+;; 10000 - ~ 1540 sec
