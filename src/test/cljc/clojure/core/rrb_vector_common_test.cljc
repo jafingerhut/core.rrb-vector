@@ -142,7 +142,7 @@
          (concat (range 123) (range 68) (range 64)))))
 
 (deftest test-hasheq
-  (is (= (hash []) (fv/vector)))
+  (is (= (hash []) (hash (fv/vector))))
   (let [v1 (vec (range 1024))
         v2 (vec (range 1024))
         v3 (dv/dbg-catvec (vec (range 512)) (vec (range 512 1024)))
