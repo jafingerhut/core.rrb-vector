@@ -28,6 +28,9 @@ test*)
 long*)
     # Run long/generative tests
     exec clj -A:cljs:cljs-test:cljs-runlongtests ;;
+coll*)
+    # Run collection-check generative tests
+    exec clj -A:cljs:cljs-test:cljs-check:cljs-runcheck ;;
 *)
     1>&2 echo "unknown task name: ${TASK}"
     exit 1 ;;
