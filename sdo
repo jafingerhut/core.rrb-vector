@@ -31,6 +31,8 @@ long*)
 coll*)
     # Run collection-check generative tests
     exec clj -A:cljs:cljs-test:cljs-check:cljs-runcheck ;;
+east*|lint*)
+    1>&2 echo "Eastwood not supported for ClojureScript" ;;
 *)
     1>&2 echo "unknown task name: ${TASK}"
     exit 1 ;;

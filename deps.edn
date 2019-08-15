@@ -49,10 +49,6 @@
                :extra-deps {collection-check {:mvn/version "0.1.7"}
                             com.gfredericks/test.chuck {:mvn/version "0.2.10"}
                             org.clojure/test.check {:mvn/version "0.9.0"}}}
-  ;; I tried running collection-check on ClojureScript with Node, but
-  ;; it quickly threw a NoClassDefFoundError for class
-  ;; clojure/lang/Tuple.  It looks like it might require modifications
-  ;; to collection-check code in order to make this work?
   :cljs-runcheck {:main-opts ["-m" "cljs.main"
                               "-re" "node"
                               "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-check),(t/run-tests,'clojure.core.rrb-vector-check)"]}
