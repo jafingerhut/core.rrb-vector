@@ -1598,6 +1598,7 @@
 
 ;; TBD: Is there any promise about what metadata catvec returns?
 ;; Always the same as on the first argument?
+(def fallback-enabled (atom true))
 (def fallback-to-slow-splice-count1 (atom 0))
 (def fallback-to-slow-splice-count2 (atom 0))
 
@@ -1611,9 +1612,9 @@
                    " number of elements is " (+ c1 c2) ", which is"
                    " larger than the maximum number of elements "
                     max-vector-elements " supported in a vector "))))
-    (if-not (or (shift-too-large? splice-result)
-                (poor-branching? splice-result))
-      splice-result    ;; the fast result is good
+    (if (and (or (shift-too-large? splice-result)
+                 (poor-branching? splice-result))
+             @fallback-enabled)
       (do
         (dbg (str "splice-rrbts result had shift " (.-shift splice-result)
                   " and " (.tailoff splice-result) " elements not counting"
@@ -1634,7 +1635,9 @@
           ;; case above?
           (do
             (swap! fallback-to-slow-splice-count2 inc)
-            (into v1 v2)))))))
+            (into v1 v2))))
+      ;; else the fast result is good
+      splice-result)))
 
 (defn splice-rrbts [^NodeManager nm ^ArrayManager am ^Vector v1 ^Vector v2]
   (cond
