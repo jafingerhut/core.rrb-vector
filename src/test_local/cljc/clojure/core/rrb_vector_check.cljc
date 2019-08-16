@@ -22,8 +22,8 @@
 ;; OpenJDK 11.0.4
 ;; Clojure 1.10.1
 
-;; 1000 - ~ 13 ssec
-;; 10000 - ~ 2 mins
+;; 1000 - 13 ssec
+;; 10000 - 2 mins
 
 ;; After updating to com.gredericks/test.chuck version 0.2.10, the
 ;; latest as of 2019-Aug-14, using a parameter of 250 causes the test
@@ -58,13 +58,13 @@
 ;; 250 - 3.8 sec
 ;; 1000 - 13 sec
 ;; 2000 - 25 sec
-;; 5000 - ~ 60 sec
-;; 10000 - ~ 120 sec
-;; 20000 - ~ 230 sec
-;; 30000 - ~ 360 sec
-;; 40000 - ~ 440 sec
-;; 50000 - ~ 560 sec
-;; 100000 - ~ 1200 sec
+;; 5000 - 60 sec
+;; 10000 - 120 sec
+;; 20000 - 230 sec
+;; 30000 - 360 sec
+;; 40000 - 440 sec
+;; 50000 - 560 sec
+;; 100000 - 1200 sec
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ClojureScript results:
@@ -73,14 +73,14 @@
 ;; Node.js version 10.16.0
 ;; ClojureScript 1.10.520
 
-;; 200 - ~ 22 sec
-;; 300 - ~ 28 sec
-;; 500 - ~ 51 sec
-;; 1000 - ~ 105 sec
-;; 2000 - ~ 190 sec
-;; 5000 - ~ 485 sec
-;; 10000 - ~ 1070 sec
-;; 50000 - ~ 5273 sec
+;; 200 - 22 sec
+;; 300 - 28 sec
+;; 500 - 51 sec
+;; 1000 - 105 sec
+;; 2000 - 190 sec
+;; 5000 - 485 sec
+;; 10000 - 1070 sec
+;; 50000 - 5273 sec
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ClojureScript results:
@@ -90,5 +90,15 @@
 ;; Node.js version 8.10.0
 ;; ClojureScript 1.10.520
 
-;; 250 - ~ 42 sec
-;; 10000 - ~ 1540 sec
+;; 250 - 42 sec
+;; 10000 - 1540 sec
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ClojureScript results:
+;; late 2014 Mac mini with 1.4 GHz Intel Core i5, 4 GB RAM, macOS 10.14.6
+;; AdoptOpenJDK 11.0.4
+;; Node.js version 10.16.2
+;; ClojureScript 1.10.520
+
+;; 10000 - 1316 sec
+;; 50000 - 6915 sec (115 min 15 sec)
