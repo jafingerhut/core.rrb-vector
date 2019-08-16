@@ -44,7 +44,69 @@
 ;; NO: nm am - cljs doesn't need them, and clj only uses them for the
 ;; last few functions above.
 
-(defn dbg-vec [v]
+(defn children-summary [node shift get-array get-ranges regular? opts]
+  (let [children (get-array node)
+        reg? (regular? node)
+        rngs (if-not reg? (get-ranges node))
+        array-len (count children)
+        children-seq (if reg? children (butlast children))
+        non-nils (remove nil? children-seq)
+        regular-children (filter regular? non-nils)
+        num-non-nils (count non-nils)
+        num-regular-children (count regular-children)
+        num-irregular-children (- num-non-nils num-regular-children)
+        num-nils (- (count children-seq) num-non-nils)
+        exp-array-len (if reg? 32 33)
+        bad-array-len? (not= array-len exp-array-len)]
+    ;; 'r' for regular, 'i' for irregular
+    ;; For either type of node, its first 32 array elements are broken
+    ;; down into:
+    ;; # regular children
+    ;; # irregular children
+
+    ;; # of nil 'children' not shown, since it will always be 32 minus
+    ;; # the total of # regular plus irregular children, unless the
+    ;; # array is the wrong size, and in that case a BAD-ARRAY-LEN
+    ;; # message will be included in the string.
+    (pd/format "%s%d+%d%s" (if reg? "r" "i")
+               num-regular-children
+               num-irregular-children
+               (if bad-array-len?
+                 (pd/format " BAD-ARRAY-LEN %d != %d" array-len exp-array-len)
+                 ""))))
+
+(defn filter-indexes
+  "Return a sequence of all indexes of elements e of coll for
+  which (pred e) returns logical true.  0 is the index of the first
+  element."
+  [pred coll]
+  (filter (complement nil?)
+          (map-indexed (fn [idx e]
+                         (if (pred e)
+                           idx))
+                       coll)))
+
+(defn dbg-vec
+ ([v]
+  (dbg-vec v {:max-depth nil   ;; integer to limit depth, nil for unlimited
+              ;; force showing tree "fringes" beyond max-depth
+              :always-show-fringes false
+              ;; show vector elements.  false for only count
+              :show-elements true
+              ;; show summary of number of children of each node, as
+              ;; returned by function children-summary
+              :show-children-summary false
+              ;; default false means show ranges arrays with their raw
+              ;; unprocessed contents.  Use true to show only the
+              ;; first n elements, where n=(aget (get-ranges node)
+              ;; 32), and to show the 'deltas' between consecutive
+              ;; pairs, e.g. if the original is (32 64 96 0 ... 0 3),
+              ;; then instead show (32 32 32), which, if the data
+              ;; structure is correct, is the number of vector
+              ;; elements reachable through each of the node's 3
+              ;; children.
+              :show-ranges-as-deltas false}))
+ ([v opts]
   (let [{:keys [v subvector? subvec-start subvec-end get-root get-shift
                 get-tail get-cnt get-array get-ranges regular? tail-len]}
         (pd/unwrap-subvec-accessors-for v)
@@ -55,29 +117,70 @@
     (when subvector?
       (pd/printf "SubVector from start %d to end %d of vector:\n"
                  subvec-start subvec-end))
-    (letfn [(go [indent shift i node]
+    (letfn [(go [indent shift i node on-left-fringe? on-right-fringe?]
               (when node
                 (dotimes [_ indent]
                   (print "  "))
                 (pd/printf "%02d:%02d %s" shift i (pd/abbrev-for-type-of node))
-                (if-not (or (zero? shift) (regular? node))
-                  (print ":" (seq (get-ranges node))))
                 (if (zero? shift)
-                  (print ":" (vec (get-array node))))
+                  ;; this node has only vector elements as its children
+                  (if (:show-elements opts)
+                    (print ":" (vec (get-array node)))
+                    (print ":" (count (get-array node))
+                           "vector elements elided"))
+                  ;; else this node has only other nodes as its children
+                  (do
+                    (when (:show-children-summary opts)
+                      (print " ")
+                      (print (children-summary node shift get-array get-ranges
+                                               regular? opts)))
+                    (if (not (regular? node))
+                      (if (:show-ranges-as-deltas opts)
+                        (let [rngs (get-ranges node)
+                              r (aget rngs 32)
+                              tmp (map - (take r rngs) (take r (cons 0 rngs)))]
+                          (print ":" (seq tmp)))
+                        (print ":" (seq (get-ranges node)))))))
                 (println)
-                (if-not (zero? shift)
-                  (dorun
-                   (map-indexed (partial go (inc indent) (- shift 5))
-                                (let [arr (get-array node)]
-                                  (if (regular? node)
-                                    arr
-                                    (butlast arr))))))))]
+                (let [no-children? (zero? shift)
+                      visit-all-children? (and (not no-children?)
+                                               (or (nil? (:max-depth opts))
+                                                   (< (inc indent)
+                                                      (:max-depth opts))))
+                      visit-some-children? (or visit-all-children?
+                                               (and (not no-children?)
+                                                    (:always-show-fringes opts)
+                                                    (or on-left-fringe?
+                                                        on-right-fringe?)))]
+                  (if visit-some-children?
+                    (dorun
+                     (let [arr (get-array node)
+                           a (if (regular? node) arr (butlast arr))
+                           non-nil-idxs (filter-indexes (complement nil?) a)
+                           first-non-nil-idx (first non-nil-idxs)
+                           last-non-nil-idx (last non-nil-idxs)]
+                       (map-indexed
+                        (fn [i node]
+                          (let [child-on-left-fringe?
+                                (and on-left-fringe? (= i first-non-nil-idx))
+                                child-on-right-fringe?
+                                (and on-right-fringe? (= i last-non-nil-idx))
+                                visit-this-child?
+                                (or visit-all-children?
+                                    (and (:always-show-fringes opts)
+                                         (or child-on-left-fringe?
+                                             child-on-right-fringe?)))]
+                            (if visit-this-child?
+                              (go (inc indent) (- shift 5) i node
+                                  child-on-left-fringe?
+                                  child-on-right-fringe?))))
+                        a)))))))]
       (pd/printf "%s (%d elements):\n" (pd/abbrev-for-type-of v) (count v))
-      (go 0 shift 0 root)
+      (go 0 shift 0 root true true)
       (println (if (pd/transient-vector? v)
                  (pd/format "tail (tidx %d):" (pd/dbg-tidx v))
                  "tail:")
-               (vec tail)))))
+               (vec tail))))))
 
 (defn first-diff [xs ys]
   (loop [i 0 xs (seq xs) ys (seq ys)]
@@ -475,7 +578,7 @@
 ;; of those other functions, and will thus _not_ be checked.
 
 ;; peek - persistent only.  clj arities [coll]
-;; 
+;;
 ;; catvec (persistent only) - clj arities [] [v1] [v1 v2] [v1 v2 & vn]
 ;; vector (persistent only) - clj arities [] [a] [a b] [a b & args] (same for fv/vector)
 ;; vec (persistent only) - clj arities [coll] (same for fv/vec)

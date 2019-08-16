@@ -30,6 +30,25 @@
 ;; vs. when they are not.  They can take significantly longer than the
 ;; other tests in this namespace.
 
+(defn my-splice [v1 v2]
+  (reset! rrbt/fallback-enabled false)
+  (let [dbg-vec-opts {:show-children-summary true,
+                      :always-show-fringes true,
+                      :max-depth 2
+                      :show-ranges-as-deltas true}]
+    (println)
+    (println "------------------------------------------------------------")
+    (println (str "v1: #=" (count v1) ": [" (first v1) " ... " (peek v1) "]"))
+    (dv/dbg-vec v1 dbg-vec-opts)
+    (println "----------")
+    (println (str "v2: #=" (count v2) ": [" (first v2) " ... " (peek v2) "]"))
+    (dv/dbg-vec v2 dbg-vec-opts)
+    (let [ret (dv/dbg-splicev v1 v2)]
+      (println "----------")
+      (println "(catvec v1 v2): count=" (count ret))
+      (dv/dbg-vec ret dbg-vec-opts)
+      ret)))
+
 (deftest test-splicing
   (testing "splicing"
     (is (dv/check-catvec 1025 1025 3245 1025 32768 1025 1025 10123 1025 1025))
@@ -41,6 +60,8 @@
     ;; Order that catvec will perform splicev calls:
     (let [counts [26091 31388 1098 43443 46195 4484 48099 7905
                   13615 601 13878 250 10611 9271 53170]
+          ;;do-splice dv/dbg-splicev
+          do-splice my-splice
 
           prefix-sums (reductions + counts)
           ranges (map range (cons 0 prefix-sums) prefix-sums)
@@ -48,26 +69,26 @@
           [v01 v02 v03 v04 v05 v06 v07 v08
            v09 v10 v11 v12 v13 v14 v15] (map fv/vec ranges)
 
-          v01-02 (dv/dbg-splicev v01 v02)  ;; top level catvec call
-          v03-04 (dv/dbg-splicev v03 v04)  ;; top level catvec call
-          v01-04 (dv/dbg-splicev v01-02 v03-04)  ;; top level catvec call
+          v01-02 (do-splice v01 v02)  ;; top level catvec call
+          v03-04 (do-splice v03 v04)  ;; top level catvec call
+          v01-04 (do-splice v01-02 v03-04)  ;; top level catvec call
 
-          v05-06 (dv/dbg-splicev v05 v06)  ;; recurse level 1 catvec call
-          v07-08 (dv/dbg-splicev v07 v08)  ;; recurse level 1 catvec call
-          v05-08 (dv/dbg-splicev v05-06 v07-08)  ;; recurse level 1 catvec call
+          v05-06 (do-splice v05 v06)  ;; recurse level 1 catvec call
+          v07-08 (do-splice v07 v08)  ;; recurse level 1 catvec call
+          v05-08 (do-splice v05-06 v07-08)  ;; recurse level 1 catvec call
 
-          v09-10 (dv/dbg-splicev v09 v10)  ;; recurse level 2 catvec call
-          v11-12 (dv/dbg-splicev v11 v12)  ;; recurse level 2 catvec call
-          v09-12 (dv/dbg-splicev v09-10 v11-12)  ;; recurse level 2 catvec call
+          v09-10 (do-splice v09 v10)  ;; recurse level 2 catvec call
+          v11-12 (do-splice v11 v12)  ;; recurse level 2 catvec call
+          v09-12 (do-splice v09-10 v11-12)  ;; recurse level 2 catvec call
 
-          v13-14 (dv/dbg-splicev v13 v14)  ;; recurse level 3 catvec call
-          v13-15 (dv/dbg-splicev v13-14 v15)  ;; recurse level 3 catvec call
+          v13-14 (do-splice v13 v14)  ;; recurse level 3 catvec call
+          v13-15 (do-splice v13-14 v15)  ;; recurse level 3 catvec call
 
-          v09-15 (dv/dbg-splicev v09-12 v13-15)  ;; recurse level 2 catvec call
+          v09-15 (do-splice v09-12 v13-15)  ;; recurse level 2 catvec call
 
-          v05-15 (dv/dbg-splicev v05-08 v09-15)  ;; recurse level 1 catvec call
+          v05-15 (do-splice v05-08 v09-15)  ;; recurse level 1 catvec call
 
-          v01-15 (dv/dbg-splicev v01-04 v05-15)  ;; top level catvec call
+          v01-15 (do-splice v01-04 v05-15)  ;; top level catvec call
 
           exp-val (range (last prefix-sums))]
       (is (= -1 (dv/first-diff v01-15 exp-val)))

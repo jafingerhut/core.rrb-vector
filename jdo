@@ -31,9 +31,12 @@ long*)
 coll*)
     # Run collection-check generative tests
     exec clj -A:clj:clj-test:clj-check:clj-runcheck ;;
+focu*)
+    # Run whatever the current 'focus' tests are
+    exec clj -A:clj:clj-test:clj-check:clj-runfocus ;;
 east*|lint*)
     # Run Eastwood
-    exec clojure -A:clj:clj-test:check:eastwood ;;
+    exec clojure -A:clj:clj-test:clj-check:eastwood ;;
 *)
     1>&2 echo "unknown task name: ${TASK}"
     exit 1 ;;
