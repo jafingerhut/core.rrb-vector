@@ -60,8 +60,8 @@
     ;; Order that catvec will perform splicev calls:
     (let [counts [26091 31388 1098 43443 46195 4484 48099 7905
                   13615 601 13878 250 10611 9271 53170]
-          ;;do-splice dv/dbg-splicev
-          do-splice my-splice
+          do-splice dv/dbg-splicev
+          ;;do-splice my-splice
 
           prefix-sums (reductions + counts)
           ranges (map range (cons 0 prefix-sums) prefix-sums)
