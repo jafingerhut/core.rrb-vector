@@ -54,10 +54,10 @@
                               "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-check),(t/run-tests,'clojure.core.rrb-vector-check)"]}
 
   ;; Run whatever the current 'focus' tests are
-  :clj-runfocus {:main-opts ["-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct]),(ct/test-splicing)"]}
+  :clj-runfocus {:main-opts ["-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
   :cljs-runfocus {:main-opts ["-m" "cljs.main"
                               "-re" "node"
-                              "-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct),(ct/test-splicing)"]}
+                              "-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
 
   ;; I have tried using cljs-test-runner for running clojure.test
   ;; tests in a modified version of core.rrb-vector, but my guess is

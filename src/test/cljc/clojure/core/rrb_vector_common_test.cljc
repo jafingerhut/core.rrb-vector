@@ -193,6 +193,20 @@
     (is (= (repeated-subvec-catvec 2371)
            (interleave (range 2371) (repeat 'x))))))
 
+(deftest test-reduce-subvec-catvec2
+  (letfn [(insert-by-sub-catvec [v n]
+            (dv/dbg-catvec (dv/dbg-subvec v 0 n) (fv/vec ['x])
+                           (dv/dbg-subvec v n)))
+          (repeated-subvec-catvec [i]
+            (reduce insert-by-sub-catvec
+                    (vec (range i))
+                    (take i (interleave (range (quot i 2) ##Inf)
+                                        (range (quot i 2) ##Inf)))))]
+    (let [n 2371
+          v (repeated-subvec-catvec n)]
+      (is (every? #(or (integer? %) (= 'x %)) v))
+      (is (= (count v) (* 2 n))))))
+
 (deftest test-splice-high-subtree-branch-count
   (let [x        (fv/vec (repeat 1145 \a))
         y        (dv/dbg-catvec (dv/dbg-subvec x 0 778) (dv/dbg-subvec x 778 779) [1] (dv/dbg-subvec x 779))

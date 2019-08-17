@@ -31,6 +31,9 @@ long*)
 coll*)
     # Run collection-check generative tests
     exec clj -A:cljs:cljs-test:cljs-check:cljs-runcheck ;;
+focu*)
+    # Run whatever the current 'focus' tests are
+    exec clj -A:cljs:cljs-test:cljs-check:cljs-runfocus ;;
 east*|lint*)
     1>&2 echo "Eastwood not supported for ClojureScript" ;;
 *)
