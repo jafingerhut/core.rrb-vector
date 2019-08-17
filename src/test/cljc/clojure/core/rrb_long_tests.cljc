@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.rrb-test-infra
              :refer [full-debug-opts set-debug-opts! ex-message-copy
-                     ex-cause-copy]]
+                     ex-cause-copy print-event-counts]]
             [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]
@@ -68,9 +68,8 @@
                      (and (> i 99000) (zero? (mod i 100)))
                      (and (> i 99900)))]
       (when check?
-        (println "i=" i
-                 "fallback-count1=" @rrbt/fallback-to-slow-splice-count1
-                 "fallback-count2=" @rrbt/fallback-to-slow-splice-count2))
+        (print "i=" i " ")
+        (print-event-counts))
       (if (< i benchmark-size)
         (recur (if check?
                  (dv/dbg-catvec (fv/vector i) v)

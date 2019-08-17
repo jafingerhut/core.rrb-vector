@@ -1,5 +1,6 @@
 (ns clojure.core.rrb-test-infra
   (:require [clojure.test :refer [deftest testing is are]]
+            [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]))
 
 
@@ -26,9 +27,32 @@
 (def num-deftests-started (atom 0))
 (def last-deftest-start-time (atom nil))
 
+(defn reset-event-counts! []
+  (reset! rrbt/peephole-optimization-count 0)
+  (reset! rrbt/fallback-to-slow-splice-count1 0)
+  (reset! rrbt/fallback-to-slow-splice-count2 0))
+
+(defn print-event-counts []
+  (println "peephole-opt-count=" @rrbt/peephole-optimization-count
+           "fallback-count1=" @rrbt/fallback-to-slow-splice-count1
+           "fallback-count2=" @rrbt/fallback-to-slow-splice-count2))
+
+(defn peephole-opt-debug-fn [orig-v optimized-v]
+  (let [dbg-vec-opts {:show-children-summary true,
+                      :always-show-fringes true,
+                      :max-depth 2
+                      :show-ranges-as-deltas true}]
+    (println "====================")
+    (println "this vector was peephole optimized:")
+    (dv/dbg-vec orig-v dbg-vec-opts)
+    (println)
+    (println "result of peephole optimization:")
+    (dv/dbg-vec optimized-v dbg-vec-opts)))
+
 (defmethod clojure.test/report #?(:clj :begin-test-var
                                   :cljs [:cljs.test/default :begin-test-var])
   [m]
+  (reset-event-counts!)
   (let [n (swap! num-deftests-started inc)]
     (when (== n 1)
       (println "----------------------------------------")
@@ -47,7 +71,8 @@
   [m]
   ;;(println "finished" (:var m))
   (println "elapsed time (sec)" (/ (- (now-msec) @last-deftest-start-time)
-                                   1000.0)))
+                                   1000.0))
+  (print-event-counts))
 
 ;; Enable tests to be run on versions of Clojure before 1.10, when
 ;; ex-message was added.

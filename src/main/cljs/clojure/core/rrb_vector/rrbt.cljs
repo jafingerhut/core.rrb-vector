@@ -857,6 +857,116 @@
             (aset new-rngs 32 i)))
         (array (->VectorNode nil new-arr) nil)))))
 
+(def peephole-optimization-config (atom {:enabled true
+                                         :debug-fn nil}))
+(def peephole-optimization-count (atom 0))
+
+(defn child-nodes [node]
+  (filter (complement nil?)
+          (take 32 (.-arr node))))
+
+;; TBD: Do functions like last-non-nil-idx,
+;; count-vector-elements-beneath, and/or peephole-optimize-root this
+;; one already exist elsewhere in this library?  It seems like they
+;; might.
+
+;; A regular tree node should be guaranteed to have only 32-way
+;; branching at all nodes, except perhaps along the right spine, where
+;; it can be partial.  Rely on this to quickly calculate the number of
+;; vector elements beneath a regular node in O(log N) time.
+
+;; TBD: Is it possible for a regular tree node to have any leaf
+;; arrays (containing vector elements directly) with anything other
+;; than a full 32 elements?  e.g. can the arrays be smaller than 32
+;; elements?  I believe that would violate the assumptions of the
+;; regular tree indexed lookup algorithm, so almost certainly no.
+
+;; I am certain that it is possible for an irregular node to
+;; have "partial" leaf nodes, but I am assuming for the moment that
+;; regular nodes cannot.  TBD: If I do not have an invariant check for
+;; that already, add one.
+(defn last-non-nil-idx [arr]
+  (loop [i (dec (alength arr))]
+    (if (neg? i)
+      i
+      (if (nil? (aget arr i))
+        (recur (dec i))
+        i))))
+
+(defn count-vector-elements-beneath [node shift]
+  (if (regular? node)
+    (loop [node node
+           shift shift
+           acc 0]
+      (if (zero? shift)
+        (if (nil? node)
+          acc
+          ;; The +32 is for the regular leaf node reached at shift 0
+          (+ acc 32))
+        (let [arr (.-arr node)
+              max-child-idx (last-non-nil-idx arr)
+              num-elems-in-full-child (bit-shift-left 1 shift)]
+          (if (< max-child-idx 0)
+            acc
+            (recur (aget arr max-child-idx)
+                   (- shift 5)
+                   (+ acc (* max-child-idx num-elems-in-full-child)))))))
+    ;; irregular case
+    (let [rngs (node-ranges node)]
+      (aget rngs (dec (aget rngs 32))))))
+
+(defn peephole-optimize-root [v]
+  (let [config @peephole-optimization-config]
+    (if (or (<= (.-shift v) 10)
+            (not (:enabled config)))
+      ;; Tree depth cannot be reduced if shift <= 5.
+      ;; TBD: If shift=10, the grandchildren nodes need to be handled
+      ;; by an am array manager for primitive vectors, which I haven't
+      ;; written code for yet below, but so far this peephole
+      ;; optimizer seems to be working sufficiently well without
+      ;; handling that case.
+      v
+      (let [root (.-root v)
+            children (child-nodes root)
+            grandchildren (mapcat child-nodes children)
+            ;; (take 33 grandchildren) is just a technique to avoid
+            ;; generating and counting more grandchildren than
+            ;; necessary.  If there are at least 33, we do not care how
+            ;; many there are.
+            num-granchildren-bounded (count (take 33 grandchildren))
+            many-grandchildren? (> num-granchildren-bounded 32)]
+        (if many-grandchildren?
+          ;; If it is possible to reduce tree depth, it requires going
+          ;; deeper than just to the grandchildren, which is beyond
+          ;; what this peephole optimizer is intended to do.
+          v
+          ;; Create a new root node that points directly at the
+          ;; grandchildren, since there are few enough of them.
+          (let [new-arr  (make-array 33)
+                new-rngs (make-array 33)
+                new-root (->VectorNode (.-edit root) new-arr)
+                shift    (.-shift v)
+                grandchild-shift (- shift (* 2 5))]
+            (swap! peephole-optimization-count inc)
+            (loop [idx 0
+                   remaining-gc grandchildren
+                   elem-sum 0]
+              (if-let [remaining-gc (seq remaining-gc)]
+                (let [grandchild (first remaining-gc)
+                      num-elems-this-grandchild (count-vector-elements-beneath
+                                                 grandchild grandchild-shift)
+                      next-elem-sum (+ elem-sum num-elems-this-grandchild)]
+                  (aset new-arr idx grandchild)
+                  (aset new-rngs idx next-elem-sum)
+                  (recur (inc idx) (rest remaining-gc) next-elem-sum))))
+            (aset new-rngs 32 num-granchildren-bounded)
+            (aset new-arr 32 new-rngs)
+            (let [new-v (Vector. (.-cnt v) (- shift 5)
+                                 new-root (.-tail v) (.-meta v) nil)]
+              (when (:debug-fn config)
+                ((:debug-fn config) v new-v))
+              new-v)))))))
+
 ;; TBD: I do not know if this implementation actually supports this
 ;; many elements in one vector.  What is the limit?  I picked this
 ;; number simply to match what I believe is the upper limit for the
@@ -902,21 +1012,16 @@
 ;; TBD: Is there any promise about what metadata catvec returns?
 ;; Always the same as on the first argument?
 
+(def fallback-config (atom {:enabled true
+                            :debug-fn nil}))
 (def fallback-to-slow-splice-count1 (atom 0))
 (def fallback-to-slow-splice-count2 (atom 0))
 
 (defn fallback-to-slow-splice-if-needed [v1 v2 splice-result]
-  (let [c1 (long (count v1))
-        c2 (long (count v2))]
-    (when (> (+ c1 c2) max-vector-elements)
-      (throw (js/Error.
-              (str "Attempted to concatenate two vectors whose total"
-                   " number of elements is " (+ c1 c2) ", which is"
-                   " larger than the maximum number of elements "
-                   max-vector-elements " supported in a vector "))))
-    (if-not (or (shift-too-large? splice-result)
-                (poor-branching? splice-result))
-      splice-result    ;; the fast result is good
+  (let [config @fallback-config]
+    (if (and (or (shift-too-large? splice-result)
+                 (poor-branching? splice-result))
+             (:enabled config))
       (do
         (dbg (str "splice-rrbts result had shift " (.-shift splice-result)
                   " and " (tail-offset splice-result) " elements not counting"
@@ -929,19 +1034,38 @@
                       " and " (tail-offset v1) " elements not counting"
                       " the tail.  Building the result from scratch."))
             ;: See Note 3
-            (-> (empty v1) (into v1) (into v2)))
+            (let [new-splice-result (-> (empty v1) (into v1) (into v2))]
+              (when (:debug-fn config)
+                ((:debug-fn config) splice-result new-splice-result))
+              new-splice-result))
           ;; Assume that v1 is balanced enough that we can use into to
           ;; add all elements of v2 to it, without problems.  TBD:
           ;; That assumption might be incorrect.  Consider checking
           ;; the result of this, too, and fall back again to the true
           ;; case above?
-          (do
+          (let [new-splice-result (into v1 v2)]
             (swap! fallback-to-slow-splice-count2 inc)
-            (into v1 v2)))))))
+            (when (:debug-fn config)
+              ((:debug-fn config) splice-result new-splice-result))
+            new-splice-result)))
+      ;; else the fast result is good
+      splice-result)))
+
+(defn post-splice-fixup [v1 v2 splice-result]
+  (->> splice-result
+       peephole-optimize-root
+       (fallback-to-slow-splice-if-needed v1 v2)))
 
 (defn splice-rrbts [v1 v2]
   (cond
     (zero? (count v1)) v2
+    (> (+ (count v1) (count v2)) max-vector-elements)
+    (let [c1 (count v1), c2 (count v2)]
+      (throw (js/Error.
+              (str "Attempted to concatenate two vectors whose total"
+                   " number of elements is " (+ c1 c2) ", which is"
+                   " larger than the maximum number of elements "
+                   max-vector-elements " supported in a vector "))))
     (< (count v2) rrbt-concat-threshold) (into v1 v2)
     :else
     (let [s1 (.-shift v1)
@@ -987,7 +1111,7 @@
           ncnt2   (if n2
                     ncnt2
                     0)]
-      (fallback-to-slow-splice-if-needed
+      (post-splice-fixup
        v1 v2
        (if n2
          (let [arr      (make-array 33)

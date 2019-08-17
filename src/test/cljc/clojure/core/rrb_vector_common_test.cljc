@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.rrb-test-infra
              :refer [full-debug-opts set-debug-opts! ex-message-copy
-                     ex-cause-copy]]
+                     ex-cause-copy peephole-opt-debug-fn]]
             #?@(:clj ([clojure.java.io :as io]))
             [clojure.edn :as edn]
             [clojure.core.rrb-vector :as fv]
@@ -31,11 +31,19 @@
 ;; other tests in this namespace.
 
 (defn my-splice [v1 v2]
-  (reset! rrbt/fallback-enabled false)
   (let [dbg-vec-opts {:show-children-summary true,
                       :always-show-fringes true,
                       :max-depth 2
-                      :show-ranges-as-deltas true}]
+                      :show-ranges-as-deltas true}
+        [saved-value1 _] (swap-vals! rrbt/fallback-config
+                                     (constantly {:enabled false
+                                                  :debug-fn nil}))
+        [saved-value2 _] (swap-vals!
+                          rrbt/peephole-optimization-config
+                          (constantly
+                           {:enabled true
+                            :record-enabled true
+                            :debug-fn peephole-opt-debug-fn}))]
     (println)
     (println "------------------------------------------------------------")
     (println (str "v1: #=" (count v1) ": [" (first v1) " ... " (peek v1) "]"))
@@ -47,6 +55,8 @@
       (println "----------")
       (println "(catvec v1 v2): count=" (count ret))
       (dv/dbg-vec ret dbg-vec-opts)
+      (reset! rrbt/fallback-config saved-value1)
+      (reset! rrbt/peephole-optimization-config saved-value2)
       ret)))
 
 (deftest test-splicing
