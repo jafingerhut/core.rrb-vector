@@ -1,8 +1,7 @@
 (ns clojure.core.rrb-vector-common-test
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.rrb-test-infra
-             :refer [full-debug-opts set-debug-opts! ex-message-copy
-                     ex-cause-copy peephole-opt-debug-fn]]
+             :refer [ex-message-copy ex-cause-copy peephole-opt-debug-fn]]
             #?@(:clj ([clojure.java.io :as io]))
             [clojure.edn :as edn]
             [clojure.core.rrb-vector :as fv]
@@ -19,7 +18,7 @@
      (def cwd (.cwd js/process))
      (def fs (js/require "fs"))))
 
-(set-debug-opts! full-debug-opts)
+(dv/set-debug-opts! dv/full-debug-opts)
 
 (deftest test-slicing
   (testing "slicing"

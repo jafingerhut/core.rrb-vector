@@ -4,6 +4,13 @@
             [clojure.core.rrb-vector.debug :as dv]))
 
 
+;; Note: I am leaving full-debug-opts and set-debug-opts! here for a
+;; bit longer, since I recommended someone else use them for trying to
+;; analyze a problem they experienced when using core.rrb-vector, but
+;; I have already recently added these same things into the
+;; clojure.core.rrb-vector.debug namespace, and recommend using the
+;; ones in that namespace.
+
 (def full-debug-opts {:trace false
                       :validate true
                       :return-value-checks

@@ -806,35 +806,6 @@
 ;;       Calls many internal implementation detail functions,
 ;;       e.g. slice-left slice-right make-array array-copy etc.
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Supported keys of @debug-opts:
-
-;; :catvec used by dbg-catvec
-;; :splicev used by dbg-splicev
-;; :slicev used by dbg-slicev
-
-;; The value associated with each key is a submap that may have the
-;; following keys.
-
-;; :trace - logical true to enable some debug printing when dbg-*
-;; function is called.
-
-;; :validate - logical true to enable checking of a return value
-;; against the expected return value, independently calculated via
-;; operations on sequences.
-
-;; :return-value-checks - a sequence of functions to perform
-;; additional checks on the return value, e.g.
-
-;; edit-nodes-error-checks
-;; basic-node-error-checks
-;; ranges-error-checks
-
-;; See those functions for the arguments the function is called with.
-
-(def debug-opts (atom {}))
-
 (defn edit-nodes-error-checks [err-desc-str ret & args]
   (let [i (edit-nodes-errors ret)]
     (when (:error i)
@@ -872,6 +843,73 @@
                       ": " (:description i)))
         (record-failure-data {:err-desc-str err-desc-str, :ret ret,
                               :args args, :ranges-errors i})))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Supported keys of @debug-opts:
+
+;; :catvec used by dbg-catvec
+;; :splicev used by dbg-splicev
+;; :slicev used by dbg-slicev
+
+;; The value associated with each key is a submap that may have the
+;; following keys.
+
+;; :trace - logical true to enable some debug printing when dbg-*
+;; function is called.
+
+;; :validate - logical true to enable checking of a return value
+;; against the expected return value, independently calculated via
+;; operations on sequences.
+
+;; :return-value-checks - a sequence of functions to perform
+;; additional checks on the return value, e.g.
+
+;; edit-nodes-error-checks
+;; basic-node-error-checks
+;; ranges-error-checks
+
+;; See those functions for the arguments the function is called with.
+
+(def debug-opts (atom {}))
+
+;; set-debug-opts! is a helper function for modifying the debug-opts
+;; atom above.  Call:
+
+;; (set-debug-opts! full-debug-opts)
+
+;; to enable as thorough of extra verification checks as is supported
+;; by existing code, when you call any of the dbg-* variants of the
+;; functions in this namespace, e.g. dbg-catvec, dbg-subvec.
+
+;; It will also slow down your code to do so.  dbg-* functions return
+;; the same values as their non dbg-* original functions they are
+;; based upon, so you can write application code that mixes calls to
+;; both, calling the dbg-* versions only occasionally, if you have a
+;; long sequence of operations that you want to look for bugs within
+;; core.rrb-vector's implementation of.
+
+;; dbg-catvec always calls to dbg-splice-rrbts, and dbg-splice-rrbts
+;; always concatenates a pair of vectors, so it is closer to the
+;; source of any problems that catvec can encounter.  I think in just
+;; about all cases it will be more effetive to enable :splice-rrbts in
+;; debug-opts, vs. :catvec, and if you do that, it will only slow you
+;; down to also enable :catvec.
+
+(def full-debug-opts {:trace false
+                      :validate true
+                      :return-value-checks
+                      [edit-nodes-error-checks
+                       basic-node-error-checks
+                       ranges-error-checks]})
+
+(defn set-debug-opts! [opts]
+  (reset! debug-opts
+          {;;:catvec opts      ;; redundant, really.  Recommend :splice-rrbts
+           :splice-rrbts opts  ;; checking this checks dbg-catvec results, too
+           :slicev opts        ;; checking this checks dbg-subvec results, too
+           :pop opts           ;; affects dbg-pop
+           :pop! opts          ;; affects dbg-pop!
+           :transient opts}))  ;; affects dbg-transient
 
 (defn validating-pop [f err-desc-str coll]
   (let [coll-seq (copying-seq coll)

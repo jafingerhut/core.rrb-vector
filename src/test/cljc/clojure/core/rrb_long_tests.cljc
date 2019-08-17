@@ -1,8 +1,7 @@
 (ns clojure.core.rrb-long-tests
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.rrb-test-infra
-             :refer [full-debug-opts set-debug-opts! ex-message-copy
-                     ex-cause-copy print-event-counts]]
+             :refer [ex-message-copy ex-cause-copy print-event-counts]]
             [clojure.core.rrb-vector :as fv]
             [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]
@@ -16,7 +15,7 @@
 ;;(def longer-generative-tests true)
 (def longer-generative-tests false)
 
-(set-debug-opts! full-debug-opts)
+(dv/set-debug-opts! dv/full-debug-opts)
 
 (deftest test-slicing-generative
   (testing "slicing (generative)"
