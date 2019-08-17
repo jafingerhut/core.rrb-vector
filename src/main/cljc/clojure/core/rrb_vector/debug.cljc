@@ -606,13 +606,24 @@
 
 
 (def failure-data (atom []))
+(def warning-data (atom []))
 
 (defn clear-failure-data! []
   (reset! failure-data []))
 
 (let [orig-conj clojure.core/conj]
   (defn record-failure-data [d]
-    (swap! failure-data orig-conj d)))
+    (swap! failure-data orig-conj d)
+    ;; TBD: Consider adding an option that lets one continue after the
+    ;; first failure is found, but the default behavior of stopping
+    ;; immediately seems best.
+    (throw (ex-info
+            (str "Problem found in core.rrb-vector internal data structures."
+                 "  More details can be found map that is value of (ex-data e)"
+                 " of this exception e")
+            d)))
+  (defn record-warning-data [d]
+    (swap! warning-data orig-conj d)))
 
 (defn conj-err-check [call-desc-str args ret coll-seq ret-seq exp-ret-seq
                       err-desc-str]
@@ -816,7 +827,7 @@
     (when (:warning i)
       (println (str "WARNING: possible issue with ret value from " err-desc-str
                     ": " (:description i)))
-      (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+      (record-warning-data {:err-desc-str err-desc-str, :ret ret,
                             :args args, :edit-nodes-errors i}))))
 
 (defn basic-node-error-checks [err-desc-str ret & args]
@@ -841,7 +852,7 @@
                      (= :root-too-deep (:kind i)))
         (println (str "WARNING: For ret value from " err-desc-str
                       ": " (:description i)))
-        (record-failure-data {:err-desc-str err-desc-str, :ret ret,
+        (record-warning-data {:err-desc-str err-desc-str, :ret ret,
                               :args args, :ranges-errors i})))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
