@@ -209,6 +209,15 @@
                                   (* i (bit-shift-left 1 shift))
                                   (aget rngs (dec i))))
                              end))
+          child-end   (if reg?
+                        (min (bit-shift-left 1 shift)
+                             (if (pos? i)
+                               (- end (* i (bit-shift-left 1 shift)))
+                               end))
+                        (let [capped-end (min (aget rngs i) end)]
+                          (if (pos? i)
+                            (- capped-end (aget rngs (dec i)))
+                            capped-end)))
           new-child   (slice-left (aget arr i)
                                   (- shift 5)
                                   child-start

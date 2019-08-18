@@ -355,12 +355,21 @@
   (let [shift (int shift)
         start (int start)
         end   (int end)]
+    (dbg "slice-left #1 shift=" shift
+         "start=" start
+         "end=" end)
     (if (zero? shift)
       ;; potentially return a short node
       (let [arr     (.array nm node)
             new-len (unchecked-subtract-int (.alength am arr) start)
             new-arr (.array am new-len)]
         (System/arraycopy arr start new-arr 0 new-len)
+        (dbg "slice-left #2 shift=" shift
+             "start=" start
+             "end=" end
+             "new-len=" new-len
+             "new-arr=" (seq new-arr)
+             "(alength new-arr)=" (alength new-arr))
         ;; jafingerhut TBD: This returns a node with edit=nil.  Is
         ;; that bad?  If this were done in a transient vector on the
         ;; root node's edit field, it could cause a
@@ -392,14 +401,28 @@
                                     i (bit-shift-left (int 1) shift))
                                    (aget rngs (unchecked-dec-int i))))
                           start)
-            child-end   (int (min (bit-shift-left (int 1) shift)
-                                  (if (pos? i)
-                                    (unchecked-subtract-int
-                                     end (if regular?
-                                           (unchecked-multiply-int
-                                            i (bit-shift-left (int 1) shift))
-                                           (aget rngs (unchecked-dec-int i))))
-                                    end)))
+            child-end   (int (if regular?
+                               (min (bit-shift-left (int 1) shift)
+                                    (if (pos? i)
+                                      (unchecked-subtract-int
+                                       end (unchecked-multiply-int
+                                            i (bit-shift-left (int 1) shift)))
+                                      end))
+                               (let [capped-end (min (aget rngs i) end)]
+                                 (if (pos? i)
+                                   (unchecked-subtract-int
+                                    capped-end
+                                    (aget rngs (unchecked-dec-int i)))
+                                   capped-end))))
+            _ (dbg "slice-left #2 shift=" shift
+                   "start=" start
+                   "end=" end
+                   "regular?=" regular?
+                   "i=" i
+                   "len=" len
+                   "rngs=" (seq rngs)
+                   "child-start=" child-start
+                   "child-end=" child-end)
             new-child   (slice-left nm am
                                     (aget ^objects arr i)
                                     (unchecked-subtract-int shift (int 5))
@@ -407,6 +430,19 @@
                                     child-end)
             new-len     (unchecked-subtract-int len i)
             new-len     (if (nil? new-child) (unchecked-dec-int new-len) new-len)]
+        (dbg "slice-left #3 shift=" shift
+             "start=" start
+             "end=" end
+             "regular?=" regular?
+             "i=" i
+             "len=" len
+             "child-start=" child-start
+             "child-end=" child-end
+             "(nil? new-child)=" (nil? new-child)
+             "new-len=" new-len
+             "(.regular nm new-child)=" (if (nil? new-child)
+                                          "N/A"
+                                          (.regular nm new-child)))
         (cond
           (zero? new-len)
           nil
@@ -424,6 +460,8 @@
                                     (int 0x1f)))
                           (int (last-range nm new-child)))
                 step    (bit-shift-left (int 1) shift)]
+            (dbg "slice-left #4 shift=" shift
+                 "rng0=" rng0)
             (loop [j (int 0)
                    r rng0]
               (when (< j new-len)
@@ -1094,6 +1132,12 @@
                   new-root  (if tail-cut?
                               root
                               (slice-right nm am root shift end))
+                  _ (dbg "Vector.slicev"
+                         "start=" start
+                         "end=" end
+                         "cnt=" (.-cnt this)
+                         "tail-off=" tail-off
+                         "shift=" (.-shift this))
                   new-root  (if (zero? start)
                               new-root
                               (slice-left nm am new-root shift start
