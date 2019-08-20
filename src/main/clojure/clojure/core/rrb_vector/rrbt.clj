@@ -1620,8 +1620,9 @@
 (def peephole-optimization-count (atom 0))
 
 (defn child-nodes [node ^NodeManager nm]
-  (filter (complement nil?)
-          (take 32 (.array nm node))))
+  (into [] (comp (take-while (complement nil?))
+                 (take 32))
+        (.array nm node)))
 
 ;; TBD: Do functions like last-non-nil-idx,
 ;; count-vector-elements-beneath, and/or peephole-optimize-root this
@@ -1689,12 +1690,14 @@
       (let [root (.-root v)
             ^NodeManager nm (.-nm v)
             children (child-nodes root nm)
-            grandchildren (mapcat #(child-nodes % nm) children)
-            ;; (take 33 grandchildren) is just a technique to avoid
-            ;; generating and counting more grandchildren than
-            ;; necessary.  If there are at least 33, we do not care how
-            ;; many there are.
-            num-granchildren-bounded (count (take 33 grandchildren))
+            ;; (take 33) is just a technique to avoid generating more
+            ;; grandchildren than necessary.  If there are at least
+            ;; 33, we do not care how many there are.
+            grandchildren (into [] (comp (map #(child-nodes % nm))
+                                         cat
+                                         (take 33))
+                                children)
+            num-granchildren-bounded (count grandchildren)
             many-grandchildren? (> num-granchildren-bounded 32)]
         (if many-grandchildren?
           ;; If it is possible to reduce tree depth, it requires going
