@@ -24,16 +24,19 @@ sock*)
     exec clj -A:cljs:cljs-test:cljs-socket ;;
 test*)
     # Run 'short' tests
-    exec clj -A:cljs:cljs-test:cljs-runt ;;
+    exec clojure -A:cljs:cljs-test:cljs-runt ;;
 long*)
     # Run long/generative tests
-    exec clj -A:cljs:cljs-test:cljs-runlongtests ;;
+    exec clojure -A:cljs:cljs-test:cljs-runlongtests ;;
 coll*)
     # Run collection-check generative tests
-    exec clj -A:cljs:cljs-test:cljs-check:cljs-runcheck ;;
+    exec clojure -A:cljs:cljs-test:cljs-check:cljs-runcheck ;;
+perf*)
+    # Run performance tests
+    exec clojure -A:cljs:cljs-test:cljs-runperf ;;
 focu*)
     # Run whatever the current 'focus' tests are
-    exec clj -A:cljs:cljs-test:cljs-check:cljs-runfocus ;;
+    exec clojure -A:cljs:cljs-test:cljs-check:cljs-runfocus ;;
 east*|lint*)
     1>&2 echo "Eastwood not supported for ClojureScript" ;;
 *)

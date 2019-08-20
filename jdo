@@ -24,16 +24,19 @@ sock*)
     exec clj -A:clj:clj-test:clj-socket ;;
 test*)
     # Run 'short' tests
-    exec clj -A:clj:clj-test:clj-runt ;;
+    exec clojure -A:clj:clj-test:clj-runt ;;
 long*)
     # Run long/generative tests
-    exec clj -A:clj:clj-test:clj-runlongtests ;;
+    exec clojure -A:clj:clj-test:clj-runlongtests ;;
 coll*)
     # Run collection-check generative tests
-    exec clj -A:clj:clj-test:clj-check:clj-runcheck ;;
+    exec clojure -A:clj:clj-test:clj-check:clj-runcheck ;;
+perf*)
+    # Run performance tests
+    exec clojure -A:clj:clj-test:clj-runperf ;;
 focu*)
     # Run whatever the current 'focus' tests are
-    exec clj -A:clj:clj-test:clj-check:clj-runfocus ;;
+    exec clojure -A:clj:clj-test:clj-check:clj-runfocus ;;
 east*|lint*)
     # Run Eastwood
     exec clojure -A:clj:clj-test:clj-check:eastwood ;;
