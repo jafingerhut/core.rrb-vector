@@ -1366,7 +1366,11 @@
               (recur (inc i) (+ sbc (long (slot-count nm am child cs)))))))))))
 
 (defn leaf-seq [^NodeManager nm arr]
-  (mapcat #(.array nm %) (take (index-of-nil arr) arr)))
+  (into [] (comp (take-while (complement nil?))
+                 (take 32)
+                 (map #(.array nm %))
+                 cat)
+        arr))
 
 (defn rebalance-leaves
   [^NodeManager nm ^ArrayManager am n1 cnt1 n2 cnt2 ^Box transferred-leaves]
@@ -1386,9 +1390,10 @@
             new-arr (object-array (if reg? 32 33))
             new-n1  (.node nm nil new-arr)]
         (loop [i  0
-               bs (partition-all 32
-                                 (concat (leaf-seq nm (.array nm n1))
-                                         (leaf-seq nm (.array nm n2))))]
+               bs (into [] (comp (map #(leaf-seq nm (.array nm %)))
+                                 cat
+                                 (partition-all 32))
+                        [n1 n2])]
           (when-first [block bs]
             (let [a (.array am (count block))]
               (loop [i 0 xs (seq block)]
@@ -1409,9 +1414,10 @@
             new-n1   (.node nm nil new-arr1)
             new-n2   (.node nm nil new-arr2)]
         (loop [i  0
-               bs (partition-all 32
-                                 (concat (leaf-seq nm (.array nm n1))
-                                         (leaf-seq nm (.array nm n2))))]
+               bs (into [] (comp (map #(leaf-seq nm (.array nm %)))
+                                 cat
+                                 (partition-all 32))
+                        [n1 n2])]
           (when-first [block bs]
             (let [a (.array am (count block))]
               (loop [i 0 xs (seq block)]
@@ -1432,15 +1438,26 @@
         rngs (if (.regular nm node)
                (ints (regular-ranges shift cnt))
                (ranges nm node))
-        cs   (if rngs (aget rngs 32) (index-of-nil arr))
-        cseq (fn cseq [c r]
+        cs   (if rngs (aget rngs 32) 32)
+        cseq (fn cseq [[c r]]
                (let [arr  (.array nm c)
                      rngs (if (.regular nm c)
                             (ints (regular-ranges (- shift 5) r))
                             (ranges nm c))
-                     gcs  (if rngs (aget rngs 32) (index-of-nil arr))]
-                 (map list (take gcs arr) (take gcs (map - rngs (cons 0 rngs))))))]
-    (mapcat cseq (take cs arr) (take cs (map - rngs (cons 0 rngs))))))
+                     gcs  (if rngs (aget rngs 32) 32)
+                     rng-deltas (mapv - rngs (cons 0 rngs))]
+                 (into [] (comp (take-while (complement nil?))
+                                (take gcs)
+                                (map-indexed (fn [idx node]
+                                               [node (rng-deltas idx)])))
+                       arr)))
+        rng-deltas (mapv - rngs (cons 0 rngs))]
+    (into [] (comp (take-while (complement nil?))
+                   (take cs)
+                   (map-indexed (fn [idx node] [node (rng-deltas idx)]))
+                   (map cseq)
+                   cat)
+          arr)))
 
 (defn rebalance
   [^NodeManager nm ^ArrayManager am shift n1 cnt1 n2 cnt2 ^Box transferred-leaves]
@@ -1462,9 +1479,11 @@
               new-rngs (int-array 33)
               new-n1   (.node nm nil new-arr)]
           (loop [i  0
-                 bs (partition-all 32
-                                   (concat (child-seq nm n1 shift cnt1)
-                                           (child-seq nm n2 shift cnt2)))]
+                 bs (into [] (comp (map (fn [[node cnt]]
+                                          (child-seq nm node shift cnt)))
+                                   cat
+                                   (partition-all 32))
+                          [[n1 cnt1] [n2 cnt2]])]
             (when-first [block bs]
               (let [a (object-array 33)
                     r (int-array 33)]
@@ -1493,9 +1512,11 @@
               new-n1    (.node nm nil new-arr1)
               new-n2    (.node nm nil new-arr2)]
           (loop [i  0
-                 bs (partition-all 32
-                                   (concat (child-seq nm n1 shift cnt1)
-                                           (child-seq nm n2 shift cnt2)))]
+                 bs (into [] (comp (map (fn [[node cnt]]
+                                          (child-seq nm node shift cnt)))
+                                   cat
+                                   (partition-all 32))
+                          [[n1 cnt1] [n2 cnt2]])]
             (when-first [block bs]
               (let [a (object-array 33)
                     r (int-array 33)]
