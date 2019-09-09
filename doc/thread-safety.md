@@ -1,15 +1,89 @@
+# Introduction
+
+This document discusses the implementation of Clojure data structures,
+how they implement immutability in a thread-safe way, and notes on a
+few of the mutable data structures, or other internal state, that some
+Clojure features like transients and stateful transducers contain, and
+what synchronization (if any) they require outside of the Clojure
+implementation in order to use them safely in a multi-threaded
+program.
+
+
+## References
+
+Abbrevations:
+
+* _CEJMMK_: Close Encounters of the Java Memroy Model Kind
+* _JLS_: Java Language Specification
+* _JMM_: Java Memory Model
+* _JCIP_: the book "Java Concurrency in Practice"
+
+Some references that go into depth on the Java Memory Model.
+
+* Section 17.4 "Memory Model",
+  https://docs.oracle.com/javase/specs/jls/se11/html/jls-17.html
+  * Part of "The Java Language Specification: Java SE 11", James
+    Gosling, Bill Joy, Guy Steele, Gilad Bracha, Alex Buckley, Daniel
+    Smith, 2018-08-21,
+    https://docs.oracle.com/javase/specs/jls/se11/html/index.html
+* "Java Concurrency in Practice", Brian Goetz, Tim Peierls, Joshua
+  Bloch, Joseph Bowbeer, David Holmes, Doug Lea, Addison-Wesley, 2006
+* "Close Encounters of the Java Memory Model Kind", Aleksey Shipilev,
+  2016 https://shipilev.net/blog/2016/close-encounters-of-jmm-kind/
+
+Note that the specification of the Java Memory Model is fairly
+math-intensive and not easily interpreted.  If you think you
+understand it, consider reading "Close Encounters of the Java Memory
+Model Kind" and see if you find any surprises.
+
+In particular, the name of the "happens before" relation can be
+misleading: "A happens-before B" does not mean that a machine must
+execute A before B.  For example, "A happens-before B" is true for any
+two statements A and B executed by a single thread, but if A and B are
+assignments to normal fields of a class with no special modifiers
+(e.g. no final, volatile, etc.), then a compiler in many cases is free
+to execute those statements in either order.
+
+Most of the JCIP book is advice on how to write programs safely in
+Java using the synchronization mechanisms available, and classes that
+use those mechanisms.  While there is not extensive discussion of the
+Java Memory Model, Chapter 16 does have some, and how the earlier
+advice in the book is related to it.
+
+
+## Clojure
+
+Many of Clojure's data structures are immutable.  To make instances of
+the Java classes that implement these immutable data structures safe
+for use across multiple threads, they often make heavy use of Java
+`final` fields, and always initializing these fields in the
+constructor for the objects.
+
+As one example, the class `clojure.lang.PersistentVector` has
+per-instance (i.e. not `static`) fields cnt, shift, root, tail, _meta,
+all final.  The class has only two constructors, and both of them
+initialize all of these fields.
+
+Some of those fields are primitive Java types, e.g. cnt and shift are
+int, and the Java language does not allow those fields to be modified
+after the constructor is completed (except in some situations
+involving Java deserialization that I am not addressing here).
+
+
+## Related JIRA tickets
 
 https://clojure.atlassian.net/browse/CLJ-2090
 "Improve clojure.core/distinct perf by using transient set"
 Ticket opened by Nikita Propokov
 Some comments from 2017 about thread safety in transducers and transients.
 
-
 https://clojure.atlassian.net/browse/CLJ-2146
 "partition-by and partition-all transducers should ensure visibility of state changes"
 Ticket opened by Alex Miller.
 One of the comments links to the Clojure Google group discussion below.
 
+
+## Discussions that might be informative
 
 Clojure Google group thread:
 "Using transducers in a new transducing context"
@@ -25,21 +99,10 @@ https://groups.google.com/forum/#!searchin/clojure/transient$20thread$20safety%7
 
 One of Alex Miller's messages links to his article below.
 
-
 https://puredanger.github.io/tech.puredanger.com/2008/11/26/jmm-and-final-field-freeze/
 "JMM and final field freeze"
 2008 article by Alex Miller
 
-
-Java Language Specification SE 8
-Section on Threads and Locks, defining the Java Memory Model (not the
-clearest thing to read).
-https://docs.oracle.com/javase/specs/jls/se8/html/jls-17.html
-
-
-"Close Encounters of the Java Memory Model Kind"
-Aleksey Shipilev, 2016
-https://shipilev.net/blog/2016/close-encounters-of-jmm-kind/
 
 "Memory Barriers: a Hardware View for Software Hackers"
 Paul E. McKenney, 2009
@@ -49,6 +112,7 @@ http://www.puppetmastertrading.com/images/hwViewForSwHackers.pdf
 StackOverflow "What is Clojure volatile?"
 https://stackoverflow.com/questions/31288608/what-is-clojure-volatile
 
+```
 # 2019-Jul discussion on #clojure-dev Slack channel
 
 If anyone has both (a) good knowledge of how the edit fields are used in Clojure's transient data structure implementations and (b) time to kill answering questions about them, I have a few.
@@ -91,6 +155,9 @@ alexmiller
 Yes, I would think so.
 
 Hmmm.  Looks like core.rrb-vector does not using volatiles for transients, the way the core vector type does.  Something to improve on there.
+```
+
+```
 andy.fingerhut 5:34 PM
 OK, for any Java concurrency experts out there, I am now less sure of transient collection thread safety for passing transient vectors (at least, as first example I am looking at) from one thread to another.  Suppose everything is nicely synchronized between two threads when things begin, then thread 1 calls transient on a vector and does a pop! on it, which caused its count to decrease from 3 to 2.  Thread 2 gets a reference to this post-pop! transient vector, and calls count on it.  Is thread 2 guaranteed to get the updated count when pop! completes?  A few more details in the thread I will start on this.
 
@@ -174,7 +241,9 @@ BTW I would be very glad to know the purpose of all these volatiles in the imple
 
 leonoel  4 days ago
 probably the same purpose as volatiles in stateful transducers
+```
 
+```
 andy.fingerhut  3 days ago
 In response to this statement of yours Alex: "There is a total ordering of all volatiles and some additional rules related to happen-before too iirc" I think it is true that there is a total ordering of all accesses to a single volatile field among all threads, but at least from my reading so far I haven't seen anything that says there must be a total ordering among accesses to two different volatile fields (unless there is some other constraint like program order or monitor locks, etc.)
 
@@ -186,10 +255,12 @@ FYI for those interested I finally noticed that Goetz's book "Java Concurrency I
 
 andy.fingerhut  1 day ago
 One source for the purpose of the volatiles is here: https://clojure.atlassian.net/browse/CLJ-1580   Those were a continuation of changes started with this ticket: https://clojure.atlassian.net/browse/CLJ-1498
+```
 
 
-2019-Sep-04 discussion
+2019-Sep-04 discussion:
 
+```
 andy.fingerhut 2:25 PM
 In the Clojure/Java implementation of core.async, what kind of Java synchronization techniques, if any, are used when a go block switches from running in one thread T1, to running in a different thread T2?  (feel free to correct any misimpressions that may be revealed in the question itself)
 
@@ -254,12 +325,11 @@ I think I have seen tickets where people have argued you could use a regular arr
 
 andy.fingerhut 2:45 PM
 Sounds like a bit more "global" property of the implementation, and thus a bit harder to check, and easier to break, but it does seem at least possible in principle.
+```
 
+2019-Jul-03 discussion:
 
-----------------------------------------------------------------------
-
-2013-Jul-03
-
+```
 Slack: csd: Could a function like take have been written using transients instead of volatile? I'm guessing the latter was more performant for some reason? When should I use the former vs the latter?
 
 Slack: ghadi: transients were not allowed to be accessed across threads
@@ -290,9 +360,10 @@ Slack: csd: thanks
 Slack: csd: I guess also that transient only applies to a collection type, not e.g. the case of `take, a number
 
 Slack: mpenet: Quite different beasts
+```
 
 
-# Clojure transients and thread safety
+## Clojure transients and thread safety
 
 Summary: It seems definitely possible to create a transient Clojure
 collection, at least a transient vector and perhaps others, where
@@ -418,3 +489,71 @@ to T2.
 Another used a Clojure deftype ^:unsynchronized-mutable field value
 change.
 
+
+## Do any Clojure transducers use transient collections in their internal state?
+
+The following transducer implementations in clojure.core have no uses
+of volatile, and no transients, and as far as I can see, appear
+completely stateless.
+
+halt-when
+map
+mapcat
+cat
+filter
+remove
+take-while
+replace - implementation uses map transducer
+keep
+
+
+Uses a single volatile! value as internal state, but no transients
+
+take - volatile! state is one integer
+drop - volatile! state is one integer
+drop-while - volatile! state is one value, which is either true or nil
+take-nth - volatile! state is one integer
+keep-indexed - volatile! state is one integer
+map-indexed - volatile! state is one integer
+
+distinct - volatile! state is one persistent Clojure set, with no
+transient code involved, only persistent operations performed on the
+set.
+interpose - volatile! state is one boolean
+dedupe - volatile! state is an element from the input sequence, so
+  could be mutable, which could be bad not only for synchronization
+  between threads, but also for equality semantics.
+
+
+Uses internal state that contains mutable data, maybe without proper
+synchronization if transducer moves between threads?
+
+partition-by - java.util.ArrayList named a has no synchronization
+guarantees in its implementation.  The Java API docs say that add
+method calls are not synchronized, for example.
+https://docs.oracle.com/javase/8/docs/api/java/util/ArrayList.html
+
+partition-all - similar to partition-by, contains java.util.ArrayList
+instance in its internal state, on which it performs operations such
+as the add method.
+
+Special case?
+
+random-sample - does not explicitly use any state, but does call
+(rand), which has internal state.  Is it thread safe to call rand from
+arbitrary threads?
+
+The Java API docs for method Math/random that clojure.core/random-sample uses (inside the implementation of clojure.core/rand), say:
+
+This method is properly synchronized to allow correct use by more than
+one thread. However, if many threads need to generate pseudorandom
+numbers at a great rate, it may reduce contention for each thread to
+have its own pseudorandom-number generator.
+
+https://docs.oracle.com/javase/8/docs/api/java/lang/Math.html
+
+So it looks correct for use across threads, although perhaps not as
+high performance as something that used a thread local random number
+generator, although that would be somewhat weird if the transducer
+bounced from thread to thread across executions, for elements on a
+single sequence.
