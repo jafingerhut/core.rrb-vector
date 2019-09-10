@@ -255,6 +255,14 @@ neither `final` nor `volatile`, and without performing any of the
 synchronization actions above, and the thread is still gauranteed to
 see the correct immutable object contents.
 
+The core.async library puts all local values, e.g. let/loop values
+bound to symbols, into `AtomicReferenceArray` elements when parking a
+thread, and reads them from there when restoring them.  That is one
+form of correctly synchronizing the value between threads.  Thus
+arbitrary mutable objects can be modified within a `go` block, and it
+will be properly synchronized if the `go` block ever changes from
+executing on one thread, to executing on a different thread.
+
 
 ### Notes on causality
 
@@ -296,127 +304,83 @@ that value, calculated the next time, and wrote the updated time?
 
 # Clojure transients and thread safety
 
-Summary: It seems definitely possible to create a transient Clojure
-collection, at least a transient vector and perhaps others, where
-after doing a mutation on it, e.g. assoc!, the returned transient
-collection is identical to the one passed in.
+Summary: It is possible to create a transient Clojure vector (and
+perhaps other transient collections) where after doing a mutation on
+it, e.g. assoc!, the returned transient collection is identical to the
+one passed in.
 
-If you pass a reference to that transient object to another thread,
-even in a correctly synchronized way, and then operating in only one
-thread at a time the original thread mutates it some more, then the
-next thread examines it, the second thread is _not_ guaranteed to see
-all changes to it according to what I know about the Java Memory Model
-rules.  This is because the modifications made by the original thread
-only change Java array element values, but no volatile fields, and no
-new objects with final fields are created, and no synchronized method
-calls are involved.
+Thus the following sequence of events is possible:
 
-I tried to create an experiment of this, hoping that over many many
-executions it might demonstrate the unsafety of doing this, but it
-never produced unexpected results.  That does not make it safe, of
-course, just not as much of an eye opener without the demonstration of
-unsafety.
+1. Thread T1 creates a transient vector `tv1` and performs some
+   operations on it.
 
-Thus it seems that even with the volatile fields that exist in the
-Clojure transient implementation, it requires the usual careful
-synchronization to pass a transient from one thread to another,
-_after_ the first thread has stopped making changes.
+2. Thread T1 properly synchronizes a reference to `tv1` to thread T2.
+   Because of the proper synchronization, thread T2 is at this time
+   guaranteed to see all writes T1 made to the contents of `tv1`.
 
-core.async puts all local values, e.g. let/loop values bound to
-symbols, into AtomicReferenceArray elements when parking a thread, and
-reads them from there when restoring them.  That is one form of
-correctly synchronizing the value between threads.
+3. Thread T1 does an `assoc!` call on `tv1` that changes an index in
+   the range [0, size-1], i.e. it does not add a new element.  Such an
+   `assoc!` call returns an identical object as the transient vector
+   it was given, and reads one or more fields declared `volatile` in
+   `tv1`, but does _not_ write any fields declared `volatile`.
 
+4. No further synchronization of the reference `tv1` is performed from
+   thread T1 to T2.
 
-Possible experiment to see if Clojure's transient variant of its
-PersistentVector is actually safe to pass from one thread to another:
+5. Thread T2 attempts to perform an `assoc!` operation on `tv1`.
+   However, because of the lack of synchronization of the
+   modifications made by T1 in step 3, thread T2 is _not_ guaranteed
+   to see all of the writes made then.  It may see stale contents for
+   `tv1`, indefinitely.
 
-* Create a transient vector t1 that has at least 33 elements, so it
-  has at least one tree node, and not only elements in its tail.
-* Use assoc! to modify t1 in an element of the tree, i.e. any vector
-  index from 0 to 31 inclusive.  I believe this assoc! call will
-  return a new root object t2 that is not identical to t1, because the
-  assoc! must mark the tree node as "owned" by this transient object,
-  when it was not owned by t1.
-* Use assoc! to modify t2 in a different element, but also in the
-  tree.  I believe this call should always return t3 which is
-  identical to t2, and the edited tree node will be identical to the
-  edited tree node in t2.  That is *all* objects in t3 should be
-  identical to those in t2, except for the vector element that was
-  assoc!'d in this last step.
+Here is a particular code path that thread T1 can execute in step 3:
 
-Confirmed by experiment: It is true that t2 and t3 are identical, and
-that the only mutations made are to one element of the Object array
-required to perform the last assoc! operation.
+1. clojure.core/assoc! calls method assoc of interface
+   clojure.lang.ITransientAssociative, implemented by method assoc in
+   class clojure.lang.PersistentVector$TransientVector
 
-As a result, it seems to me like this mutation is only guaranteed to
-be visible to another thread B, different than the thread A that made
-all of the calls listed above, if A and B properly synchronize the
-reference t3 from one thread to the next.
+2. Method assoc calls Util.isInteger and intValue with successful
+   results, then method assocN in class
+   clojure.lang.PersistentVector$TransientVector.
 
-From the results of that experiment, it seems clear to me that taking
-a transient mutable object that has been mutated, and passing it to
-another thread, requires explicit synchronization in passing that
-reference, or else the receiving thread has no guarantees whether it
-gets up to date values in the Java arrays.  I cannot see how it helps
-to have the volatile fields in the nodes _at all_, other than to make
-it somewhat more difficult to demonstrate running code examples that
-exhibit the problem.
+3. assocN calls ensureEditable() (no arguments), which evaluates the
+   expression `root.edit.get()` where `root` is declared `volatile` in
+   class TransientVector, so we have a read of a volatile.  `edit` in
+   class clojure.lang.PersistentVector$Node is declared `transient
+   public final AtomicReference<Thread> edit`, so the reference is
+   final, but what the edit field references is a mutable
+   `AtomicReference`.  The documentation for the
+   java.util.concurrent.atomic package says that `get` has the memory
+   effects of reading a volatile variable:
+   https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/atomic/package-summary.html
+   So far we have reads of volatiles `root` and `root.edit.get()`, but
+   no volatile writes.
 
+4. assocN then reads field `cnt` of class TransientVector, which is
+   volatile, and calls method tailoff(), which reads `cnt` again.
 
-Possible experiment:
+5. The simpler code path is if `i >= tailoff()` is true, in which case
+   we execute `tail[i & 0x01f] = val`.  This reads the reference to
+   `tail`, but does not write the `tail` value.  It does write to one
+   element of the array pointed at by `tail`, but that is a normal
+   Java array that has no synchronization effects.
 
-Thread T1 creates a PV with 100 elements, converts to transient, does
-a few hundred assoc! calls, at least once on all indexes from 0 thru
-95 inclusive, then passes a reference to the transient with good
-synchronization, e.g. some queue class that synchronizes the
-references appended to it to the dequeueing thread
-(ConcurrentBlockingQueue? TBD).
+6. If instead we take the false branch and call the doAssoc method, it
+   first calls ensureEditable(node) (1 argument).  In this example,
+   the scenario is that all nodes reached have already had their
+   `edit` field made equal to `root.edit` on earlier transient
+   operations, so we always follow the true path in ensureEditable,
+   which only reads references node.edit and root.edit, both volatile
+   references, but does not write them.  Each potentially recursive
+   call of doAssoc thus reads volatiles, but does not write them, and
+   modifies some element of node.array, which are normal Java arrays
+   with no special synchronization behavior.
 
-Then the receiving thread T2 immediately calls persistent! on it and
-reads all elements.  They should all be the last versions written,
-because of the synchronization of the queue used to pass the reference
-from T1 to T2.
-
-
-Slight modification that should be bad for getting all data reliably
-from T1 to T2:
-
-Start the same as above, except after T1 sends the reference of the
-transient in the queue, then it does a bunch more assoc! calls (but no
-others, so the base object should remain identical to what was sent to
-T2 -- we can check that it remains identical in T1).
-
-Then somehow T1 sends some _other_ kind of causal signal from T1 to T2
-that T2 can continue with doing persistent! on the reference it
-received.  This could perhaps be a network request to a different
-process, which responds with some message/signal that T2 handles, and
-then does the persistent! call and the rest when it receives that
-signal.
-
-Other ways besides a network request:
-
-T1 creates a file in the file system with a particular path, one that
-did not exist before the program started running.  T2 polls
-periodically looking for the file to exist, continuing when it does
-exist.
-
-T1 writes to a "global variable" that has no synchronization, e.g. not
-volatile, not synchronized method to write it, no locks.  T2 reads
-from the global variable to see when it changes, again no volatile,
-synchronized, or locks involved.  It is not guaranteed that T2 will
-_ever_ see the change, but it might, and if it does, it might see that
-change before it sees the changes to the transient object.
-
-I tried an experiment like this with several variations, and was not
-able to see a stale read result in thread T2 over hundreds of
-thousands of trials.
-
-One group of experiments used creation of a file as a 'signal' from T1
-to T2.
-
-Another used a Clojure deftype ^:unsynchronized-mutable field value
-change.
+So from what I know of the Java Memory Model (which may be
+incomplete), thread T1's last assoc! call will read several volatile
+fields, but write no volatile fields, only some Java array elements.
+Thus when T2 later accesses `tv1`, it may see contents that are
+different than what T1 wrote.
 
 
 # Do any Clojure transducers use transient collections in their internal state?
