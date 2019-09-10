@@ -15,17 +15,17 @@ The following quote from the book "Java Concurrency in Practice" is a
 good introduction to what the word "synchronization" means in this
 context:
 
-    In a single-threaded environment, if you write a value to a
-    variable and later read that variable with no intervening writes,
-    you can expect to get the same value back.  This seems only
-    natural.  It may be hard to accept at first, but when the reads
-    and writes occur in different threads, _this is simply not the
-    case_.  In general, there is _no_ guarantee that the reading
-    thread will see a value written by another thread on a timely
-    basis, or even at all.  In order to ensure visibility of memory
-    writes across threads, you must use synchronization.
-
-    -- "Java Concurrency in Practice", Section 3.1 "Visibility"
+> In a single-threaded environment, if you write a value to a variable
+> and later read that variable with no intervening writes, you can
+> expect to get the same value back.  This seems only natural.  It may
+> be hard to accept at first, but when the reads and writes occur in
+> different threads, _this is simply not the case_.  In general, there
+> is _no_ guarantee that the reading thread will see a value written
+> by another thread on a timely basis, or even at all.  In order to
+> ensure visibility of memory writes across threads, you must use
+> synchronization.
+> 
+> -- "Java Concurrency in Practice", Section 3.1 "Visibility"
 
 See Note 1 for some notes about ClojureScript, which is not discussed
 here except for that note.
@@ -154,17 +154,16 @@ synchronization between threads, but the following summary of intent I
 will, for now, assume accurately captures the intent of the precise
 definition:
 
-    Set the final fields for an object in that object's constructor;
-    and do not write a reference to the object being constructed in a
-    place where another thread can see it before the object's
-    constructor is finished.  If this is followed, then when the
-    object is seen by another thread, that thread will always see the
-    correctly constructed version of that object's final fields.  It
-    will also see versions of any object or array referenced by those
-    final fields that are at least as up-to-date as the final fields
-    are.
-
-    -- Java Language Specification, Section 17.5 "final Field Semantics"
+> Set the final fields for an object in that object's constructor; and
+> do not write a reference to the object being constructed in a place
+> where another thread can see it before the object's constructor is
+> finished.  If this is followed, then when the object is seen by
+> another thread, that thread will always see the correctly
+> constructed version of that object's final fields.  It will also see
+> versions of any object or array referenced by those final fields
+> that are at least as up-to-date as the final fields are.
+> 
+> -- Java Language Specification, Section 17.5 "final Field Semantics"
 
 Note the last sentence in particular.  A common pattern in Clojure
 code for these immutable collections is a sequence like this:
@@ -245,13 +244,11 @@ PersistentVector is actually safe to pass from one thread to another:
 
 * Create a transient vector t1 that has at least 33 elements, so it
   has at least one tree node, and not only elements in its tail.
-
 * Use assoc! to modify t1 in an element of the tree, i.e. any vector
   index from 0 to 31 inclusive.  I believe this assoc! call will
   return a new root object t2 that is not identical to t1, because the
   assoc! must mark the tree node as "owned" by this transient object,
   when it was not owned by t1.
-
 * Use assoc! to modify t2 in a different element, but also in the
   tree.  I believe this call should always return t3 which is
   identical to t2, and the edited tree node will be identical to the
@@ -339,52 +336,50 @@ The following transducer implementations in clojure.core have no uses
 of volatile, and no transients, and as far as I can see, appear
 completely stateless.
 
-halt-when
-map
-mapcat
-cat
-filter
-remove
-take-while
-replace - implementation uses map transducer
-keep
+* halt-when
+* map
+* mapcat
+* cat
+* filter
+* remove
+* take-while
+* replace - implementation uses map transducer
+* keep
 
 
-Uses a single volatile! value as internal state, but no transients
+Uses a single volatile value as internal state, but no transients
 
-take - volatile! state is one integer
-drop - volatile! state is one integer
-drop-while - volatile! state is one value, which is either true or nil
-take-nth - volatile! state is one integer
-keep-indexed - volatile! state is one integer
-map-indexed - volatile! state is one integer
+* take - volatile state is one integer
+* drop - volatile state is one integer
+* drop-while - volatile state is one value, which is either true or nil
+* take-nth - volatile state is one integer
+* keep-indexed - volatile state is one integer
+* map-indexed - volatile state is one integer
 
-distinct - volatile! state is one persistent Clojure set, with no
-transient code involved, only persistent operations performed on the
-set.
-interpose - volatile! state is one boolean
-dedupe - volatile! state is an element from the input sequence, so
+* distinct - volatile state is one persistent Clojure set, with no
+  transient code involved, only persistent operations performed on the
+  set.
+* interpose - volatile state is one boolean
+* dedupe - volatile state is an element from the input sequence, so
   could be mutable, which could be bad not only for synchronization
   between threads, but also for equality semantics.
-
 
 Uses internal state that contains mutable data, maybe without proper
 synchronization if transducer moves between threads?
 
-partition-by - java.util.ArrayList named a has no synchronization
-guarantees in its implementation.  The Java API docs say that add
-method calls are not synchronized, for example.
-https://docs.oracle.com/javase/8/docs/api/java/util/ArrayList.html
-
-partition-all - similar to partition-by, contains java.util.ArrayList
-instance in its internal state, on which it performs operations such
-as the add method.
+* partition-by - java.util.ArrayList named a has no synchronization
+  guarantees in its implementation.  The Java API docs say that add
+  method calls are not synchronized, for example.
+  https://docs.oracle.com/javase/8/docs/api/java/util/ArrayList.html
+* partition-all - similar to partition-by, contains
+  java.util.ArrayList instance in its internal state, on which it
+  performs operations such as the add method.
 
 Special case?
 
-random-sample - does not explicitly use any state, but does call
-(rand), which has internal state.  Is it thread safe to call rand from
-arbitrary threads?
+* random-sample - does not explicitly use any state, but does call
+  (rand), which has internal state.  Is it thread safe to call rand
+  from arbitrary threads?
 
 The Java API docs for method Math/random that clojure.core/random-sample uses (inside the implementation of clojure.core/rand), say:
 
@@ -454,16 +449,16 @@ calculation of the 32-bit type int hash of the collection's contents.
 None of these fields are declared final, so the above does not apply.
 From a post to the Google Clojure group by Alex Miller 2014-May-06:
 
-    Hash codes are a special case - the pattern they use is sometimes
-    called the "racy single-check idiom" and is discussed in Effective
-    Java in Item 71 or on an internet near you.  The canonical example
-    of this is java.lang.String.  The trick is that if you don't have
-    a non-0 hash code, compute it yourself and stash it.  If threads
-    happen to see it, they can use it!  If they don't see it, they
-    compute it themselves.  If two threads race, they write the *same*
-    value, so everyone is fine.  One important aspect is that the hash
-    code must be an int which can be written atomically; if it was a
-    long, you'd potentially be subject to long tearing.
+> Hash codes are a special case - the pattern they use is sometimes
+> called the "racy single-check idiom" and is discussed in Effective
+> Java in Item 71 or on an internet near you.  The canonical example
+> of this is java.lang.String.  The trick is that if you don't have a
+> non-0 hash code, compute it yourself and stash it.  If threads
+> happen to see it, they can use it!  If they don't see it, they
+> compute it themselves.  If two threads race, they write the *same*
+> value, so everyone is fine.  One important aspect is that the hash
+> code must be an int which can be written atomically; if it was a
+> long, you'd potentially be subject to long tearing.
 
 The article ["Data-Race-Ful Lazy Initialization for
 Performance"](http://jeremymanson.blogspot.com/2008/12/benign-data-races-in-java.html)
