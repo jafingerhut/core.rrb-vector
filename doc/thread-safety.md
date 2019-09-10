@@ -1,4 +1,4 @@
-# Introduction
+# Clojure, and synchronization between threads in the JVM
 
 This article discusses the implementation of Clojure/Java data
 structures.  Unlike most such articles, it is not on how the data
@@ -196,12 +196,102 @@ contents.
 You may reasonably ask: "What Clojure mutable data structures?  Aren't
 they all immutable?"
 
-While the most commonly used Clojure data structures are immutable,
-there are a few mutable ones, e.g. transient collections.  Also, one
-design goal of Clojure was to have straightforward interoperation with
-the JVM, so it is straightforward to access all of the many Java
-libraries that have been written, of which many use mutable data
-structures.
+While the most commonly used Clojure data structures are immutable in
+the sense described above, there are a few that are mutable in that
+sense.  For example, transient collections such as `(transient [])`
+have a `conj!` operation provided by Clojure that typically does
+mutate the object.  Also, one design goal of Clojure was to have
+straightforward interoperation with the JVM, so it is straightforward
+to access all of the many Java libraries that have been written, of
+which many use mutable data structures.
+
+There are several ways to make changes to a mutable data structure C
+in thread T1, then later guarantee that a different thread T2 sees all
+of those writes.
+
+1. Only modify fields "owned" by the object within code that first
+   acquires, and then releases the object's lock, e.g. a Java
+   non-static method declared with the `synchronized` modifier.
+   Ownership here is not something that is defined within the Java
+   language itself, but based practices and conventions created by
+   Java program writers.
+2. T1 modifies fields owned by the object C, then stops making
+   modifications, and performs a "release" synchronization action
+   (examples below).  T2 makes no modifications to C, then performs a
+   corresponding "acquire" synchronization action.  At that point T2
+   should be able to see all updates made to C by T1.
+
+Examples of corresponding "release" and "acquire" actions that T1 and
+T2 could perform:
+
+1. T1 writes a reference to C into a field `F` declared `volatile`,
+   and T2 reads the reference from the same field `F`.  In this case
+   we somehow need to guarantee that T2's read of `F` is after T1's
+   write -- more on that below at "Notes on causality".
+2. T1 calls `A.set(C)` for an object `A` with type
+   [`AtomicReference`](https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/atomic/AtomicReference.html),
+   and T2 reads the reference by calling `A.get()` for the same object
+   `A`.  The same "Notes on causality" applies for this technique.
+3. T1 calls `Q.put(C)` for an object `Q` with type
+   [`ArrayBlockingQueue`](https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ArrayBlockingQueue.html),
+   and T2 reads the reference by calling `Q.take()` for the same
+   object `Q`.
+4. T1 writes a reference to C into any field `F`, even one without
+   `volatile` or `final` modifiers, then later unlocks a lock L.  T2
+   then requests lock L, and at some point in time gets it, and reads
+   `F` afterwards.
+
+There are many Java classes that provide such synchronization
+guarantees other than the two examples listed above -- an exhaustive
+list would be too long, and probably incomplete by the time it was
+created, given that anyone can write such a class.
+
+Any kind of object, immutable or mutable, may be passed from one
+thread to another using any of the techniques above.  There is no harm
+in using those techniques for immutable objects, but it is
+unnecessary.  Any thread may read a reference to an immutable object
+in any way whatsoever, e.g. from a field that has been declared
+neither `final` nor `volatile`, and without performing any of the
+synchronization actions above, and the thread is still gauranteed to
+see the correct immutable object contents.
+
+
+### Notes on causality
+
+`ArrayBlockingQueue` and all other implementations of the
+`BlockingQueue` interface guarantee that corresponding `take` and
+`put` actions are such that the `take` happens after the `put`, so
+nothing more is needed for T2 to know that it has all the latest
+updates to C made by T1.
+
+> Memory consistency effects: As with other concurrent collections,
+> actions in a thread prior to placing an object into a BlockingQueue
+> happen-before actions subsequent to the access or removal of that
+> element from the BlockingQueue in another thread.
+
+[Java doc
+reference](https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/BlockingQueue.html)
+
+Aside: I am assuming here no funny business, such as T1 `put`ing C
+into a queue, making further modifications to C, then `put`ing C
+again.  That would violate the rule above that T1 no longer makes
+modifications to C after the first `put`.
+
+But what about the technique of T1 writing to a `volatile` field `F`,
+then T2 reading from a `volatile` field `F`?  If we do nothing else to
+synchronize these actions between the threads, it is possible that
+T2's read of `F` could get whatever value `F` contained before T1
+wrote to `F`.
+
+Is there any guarantee at all if thread T1 knew that it wrote to field
+`F` "before 4:30 PM Tuesday", and thread T2 knew that it read from
+field `F` "after 4:31 PM Tuesday" (same Tuesday and time zone), that
+T2 would see T1's write of `F`?  If so, how is that guaranteed?  If
+not, is there any later time T2 could wait until that would guarantee
+it?  Maybe this could be guaranteed if there was a time keeper thread
+that used a volatile to store the current time, and periodically read
+that value, calculated the next time, and wrote the updated time?
+
 
 
 # Clojure transients and thread safety
@@ -462,3 +552,24 @@ From a post to the Google Clojure group by Alex Miller 2014-May-06:
 The article ["Data-Race-Ful Lazy Initialization for
 Performance"](http://jeremymanson.blogspot.com/2008/12/benign-data-races-in-java.html)
 by Jeremy Manson, 2008-Dec-14, goes into a few more details.
+
+Aside: Clojure vectors can contain elements that are mutable objects,
+and for most uses it is not obvious that anything goes wrong when one
+does this.  However, these vector elements have at least two potential problems:
+
+1. If such mutable objects are modified by one thread, then some
+   proper synchronization technique must be used in order for another
+   thread to read the update to date contents.  This is not unique to
+   mutable objects inside of Clojure vectors, but all mutable objects
+   in general.
+2. Two threads could calculate inconsistent values for the hash of the
+   object, and thus inconsistent values for the hash of a Clojure
+   vector containing the object.
+
+The same comments apply for Clojure maps with values (not keys) that
+are mutable objects.
+
+Of course, calculating inconsistent hashes for objects is even worse
+for hash-based collections like keys in Clojure maps, or elements of
+sets, since the 'same' object will most likely be impossible to be
+looked up or removed.
