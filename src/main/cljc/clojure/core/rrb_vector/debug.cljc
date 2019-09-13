@@ -365,7 +365,7 @@
   ;; For regular nodes, there should be zero or more 'full' children,
   ;; followed optionally by one 'partial' child, followed by nils.
   (let [[full-children others] (split-with :full? children)
-        [partial-children others] (split-with #(and (not (:full %))
+        [partial-children others] (split-with #(and (not (:full? %))
                                                     (not= :nil (:kind %)))
                                               others)
         [nil-children others] (split-with #(= :nil (:kind %)) others)
