@@ -88,21 +88,18 @@
               (aset new-arr 32 (aclone (ints (aget ^objects new-arr 32)))))
             (.node nm root-edit new-arr)))))
 
-    ;; Note 1: See the code in namespace
-    ;; clojure.core.rrb-failing-tests, deftest
-    ;; many-subvec-and-catvec-leads-to-exception, for a way to
-    ;; reproduce the condition that leads to the error message below,
-    ;; repeatably.  Shortly after the error message is printed, if you
-    ;; do anything that does a seq over the resulting data structure,
-    ;; or probably many other operations, it throws an exception
-    ;; because the place where the code expects to find a Java array
-    ;; of ints, it instead finds a NodeVec object.
+    ;; Note 1: This condition check and exception are a little bit
+    ;; closer to the source of the cause for what was issue CRRBV-20,
+    ;; added in case there is still some remaining way to cause this
+    ;; condition to occur.
     
     ;; Note 2: In the worst case, when the tree is nearly full,
     ;; calling overflow? here takes run time O(tree_depth^2) here.
     ;; That could be made O(tree_depth).  One way would be to call
-    ;; pushTail in hopes that it succeeds, but return failure on full,
-    ;; e.g. return nil.
+    ;; pushTail in hopes that it succeeds, but return some distinctive
+    ;; value indicating a failure on the full condition, and create
+    ;; the node via a .newPath call at most recent recursive pushTail
+    ;; call that has an empty slot available.
     (pushTail [this nm am shift cnt root-edit current-node tail-node]
       (assert (<= cnt (max-tree-capacity-elems shift)))
       (let [ret (.ensureEditable this nm am root-edit current-node shift)]

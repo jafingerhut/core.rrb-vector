@@ -847,13 +847,6 @@
                        (unchecked-subtract-int shift (int 5)))))))) 
       (throw (IndexOutOfBoundsException.))))
 
-  ;; Note 1: See the corresponding Note 1 near the pushTail method in
-  ;; transients.clj for transient-helper.  The two pushTail
-  ;; implementations are very similar, and likely have similar bugs
-  ;; and similar fixes that would apply to both.
-
-  ;; Note 2: See the corresponding Note 2 for the pushTail method in
-  ;; transients.clj.
   (pushTail [this shift cnt node tail-node]
     (assert (<= cnt (max-tree-capacity-elems shift)))
     (if (.regular nm node)
@@ -893,7 +886,7 @@
                                 ;; 32-elem tail we plan to add to the
                                 ;; subtree.
                                 (int 32))]
-                     ;; See Note 2
+                     ;; See Note 2 in file transients.clj
                      (if-not (overflow? nm child
                                         (unchecked-subtract-int shift (int 5))
                                         ccnt)
@@ -907,7 +900,7 @@
               (aset rngs li (unchecked-add-int (aget rngs li) (int 32)))
               ret)
           (do (when (>= li 31)
-                ;; See Note 1
+                ;; See Note 1 in file transients.clj
                 (let [msg (str "Assigning index " (inc li) " of vector"
                                " object array to become a node, when that"
                                " index should only be used for storing"
@@ -1615,8 +1608,7 @@
             (aset new-rngs 32 i)))
         (pair (.node nm nil new-arr) nil)))))
 
-(def peephole-optimization-config (atom {:enabled true
-                                         :debug-fn nil}))
+(def peephole-optimization-config (atom {:debug-fn nil}))
 (def peephole-optimization-count (atom 0))
 
 (defn child-nodes [node ^NodeManager nm]
@@ -1624,26 +1616,27 @@
                  (take 32))
         (.array nm node)))
 
-;; TBD: Do functions like last-non-nil-idx,
-;; count-vector-elements-beneath, and/or peephole-optimize-root this
-;; one already exist elsewhere in this library?  It seems like they
-;; might.
+;; (take 33) is just a technique to avoid generating more
+;; grandchildren than necessary.  If there are at least 33, we do not
+;; care how many there are.
+(defn bounded-grandchildren [nm children]
+  (into [] (comp (map #(child-nodes % nm))
+                 cat
+                 (take 33))
+        children))
 
-;; A regular tree node should be guaranteed to have only 32-way
-;; branching at all nodes, except perhaps along the right spine, where
-;; it can be partial.  Rely on this to quickly calculate the number of
-;; vector elements beneath a regular node in O(log N) time.
+;; TBD: Do functions like last-non-nil-idx and
+;; count-vector-elements-beneath already exist elsewhere in this
+;; library?  It seems like they might.
 
-;; TBD: Is it possible for a regular tree node to have any leaf
-;; arrays (containing vector elements directly) with anything other
-;; than a full 32 elements?  e.g. can the arrays be smaller than 32
-;; elements?  I believe that would violate the assumptions of the
-;; regular tree indexed lookup algorithm, so almost certainly no.
+;; A regular tree node is guaranteed to have only 32-way branching at
+;; all nodes, except perhaps along the right spine, where it can be
+;; partial.  From a regular tree node down, all leaf arrays
+;; (containing vector elements directly) are restricted to contain a
+;; full 32 vector elements.  This code relies on these invariants to
+;; quickly calculate the number of vector elements beneath a regular
+;; node in O(log N) time.
 
-;; I am certain that it is possible for an irregular node to
-;; have "partial" leaf nodes, but I am assuming for the moment that
-;; regular nodes cannot.  TBD: If I do not have an invariant check for
-;; that already, add one.
 (defn last-non-nil-idx [^objects arr]
   (loop [i (int (dec (alength arr)))]
     (if (neg? i)
@@ -1678,8 +1671,7 @@
 
 (defn peephole-optimize-root [^Vector v]
   (let [config @peephole-optimization-config]
-    (if (or (<= (.-shift v) 10)
-            (not (:enabled config)))
+    (if (<= (.-shift v) 10)
       ;; Tree depth cannot be reduced if shift <= 5.
       ;; TBD: If shift=10, the grandchildren nodes need to be handled
       ;; by an am array manager for primitive vectors, which I haven't
@@ -1690,13 +1682,7 @@
       (let [root (.-root v)
             ^NodeManager nm (.-nm v)
             children (child-nodes root nm)
-            ;; (take 33) is just a technique to avoid generating more
-            ;; grandchildren than necessary.  If there are at least
-            ;; 33, we do not care how many there are.
-            grandchildren (into [] (comp (map #(child-nodes % nm))
-                                         cat
-                                         (take 33))
-                                children)
+            grandchildren (bounded-grandchildren nm children)
             num-granchildren-bounded (count grandchildren)
             many-grandchildren? (> num-granchildren-bounded 32)]
         (if many-grandchildren?
@@ -1780,17 +1766,15 @@
 ;; TBD: Is there any promise about what metadata catvec returns?
 ;; Always the same as on the first argument?
 
-(def fallback-config (atom {:enabled true
-                            :debug-fn nil}))
+(def fallback-config (atom {:debug-fn nil}))
 (def fallback-to-slow-splice-count1 (atom 0))
 (def fallback-to-slow-splice-count2 (atom 0))
 
 (defn fallback-to-slow-splice-if-needed [^Vector v1 ^Vector v2
                                          ^Vector splice-result]
   (let [config @fallback-config]
-    (if (and (or (shift-too-large? splice-result)
-                 (poor-branching? splice-result))
-             (:enabled config))
+    (if (or (shift-too-large? splice-result)
+            (poor-branching? splice-result))
       (do
         (dbg (str "splice-rrbts result had shift " (.-shift splice-result)
                   " and " (.tailoff splice-result) " elements not counting"
