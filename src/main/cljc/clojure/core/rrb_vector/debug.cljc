@@ -625,7 +625,7 @@
   (defn record-warning-data [d]
     (swap! warning-data orig-conj d)))
 
-(defn conj-err-check [call-desc-str args ret coll-seq ret-seq exp-ret-seq
+#_(defn conj-err-check [call-desc-str args ret coll-seq ret-seq exp-ret-seq
                       err-desc-str]
   (when (not= ret-seq exp-ret-seq)
     (println (str "ERROR: " call-desc-str " returned incorrect value"))
@@ -636,7 +636,7 @@
                           :coll-seq coll-seq, :ret-seq ret-seq,
                           :exp-ret-seq exp-ret-seq})))
 
-(defn conj-validator [f err-desc-str]
+#_(defn conj-validator [f err-desc-str]
   (fn validating-conj
     ([]
      (let [coll-seq nil
@@ -682,7 +682,7 @@
                          ret coll-seq ret-seq exp-ret-seq err-desc-str)
          ret)))))
 
-(defn validating-conj!
+#_(defn validating-conj!
   ([f err-desc-str]
    (let [coll-seq nil
          exp-ret-seq (list)
@@ -711,7 +711,7 @@
        ret))))
 
 ;; TBD: Keep this, or discard?
-(defn vector-return-value-checks-print-and-record [err-desc-str ret & args]
+#_(defn vector-return-value-checks-print-and-record [err-desc-str ret & args]
   ;;(println "checking ret val from" err-desc-str)
   (let [i (edit-nodes-errors ret)]
     (when (:error i)
