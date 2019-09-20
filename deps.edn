@@ -25,6 +25,12 @@
   :cljs-test {:extra-paths ["src/test/cljs" "src/test/cljc"]
               :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
 
+  ;; Run only very short tests
+  :clj-rt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :cljs-rt {:main-opts ["-m" "cljs.main"
+                          "-re" "node"
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+
   ;; Run 'short' tests
   :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
   :cljs-runt {:main-opts ["-m" "cljs.main"
@@ -90,6 +96,8 @@
                    "-XX:+DebugNonSafepoints"]
         :extra-deps {com.clojure-goes-fast/clj-async-profiler
                      {:mvn/version "0.4.0"}}}
+  :nodis {:extra-deps {com.clojure-goes-fast/clj-java-decompiler
+                       {:mvn/version "0.2.1"}}}
   :eastwood {:extra-deps {jonase/eastwood {:mvn/version "0.3.5"}}
              :main-opts ["-m" "eastwood.lint"
                          "{:source-paths,[\"src/main/clojure\"],:test-paths,[\"src/test/clojure\",\"src/test/cljs\",\"src/test_local/clojure\"],:add-linters,[:unused-fn-args,:unused-locals,:unused-namespaces,:unused-private-vars],:exclude-linters,[:implicit-dependencies],:exclude-namespaces,[]}"]}
