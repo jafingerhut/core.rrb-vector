@@ -71,7 +71,7 @@
         (print-event-counts))
       (if (< i benchmark-size)
         (recur (if check?
-                 (dv/dbg-catvec (fv/vector i) v)
+                 (dv/checking-catvec (fv/vector i) v)
                  (fv/catvec (fv/vector i) v))
                (inc i))
         v))))

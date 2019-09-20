@@ -443,7 +443,7 @@
        :count (last expected-ranges)})))
 
 
-(defn max-capacity-over-1024 [root-shift]
+(defn max-capacity-divided-by-1024 [root-shift]
   (let [shift-amount (max 0 (- root-shift 5))]
     (bit-shift-left 1 shift-amount)))
 
@@ -520,16 +520,16 @@
           ;; a bug if a tree is less than 1/1024 full compared to its
           ;; max capacity.  1/32 full is normal when a tree becomes 1
           ;; deeper than it was before.
-          (< 0 (:count x) (max-capacity-over-1024 root-shift))
+          (< 0 (:count x) (max-capacity-divided-by-1024 root-shift))
           {:error false, :warning true, :kind :root-too-deep,
            :description (str "For root shift=" root-shift " the maximum "
                              "capacity divided by 1024 is "
-                             (max-capacity-over-1024 root-shift)
+                             (max-capacity-divided-by-1024 root-shift)
                              " but the tree contains only "
                              (:count x) " vector elements outside of the tail")}
           :else x)))))
 
-(defn add-return-value-checks [f err-desc-str return-value-check-fn]
+#_(defn add-return-value-checks [f err-desc-str return-value-check-fn]
   (fn [& args]
     (let [ret (apply f args)]
       (apply return-value-check-fn err-desc-str ret args)
@@ -858,14 +858,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Supported keys of @debug-opts:
 
-;; :catvec used by dbg-catvec
-;; :splicev used by dbg-splicev
-;; :slicev used by dbg-slicev
+;; :catvec used by checking-catvec
+;; :splicev used by checking-splicev
+;; :slicev used by checking-slicev
 
 ;; The value associated with each key is a submap that may have the
 ;; following keys.
 
-;; :trace - logical true to enable some debug printing when dbg-*
+;; :trace - logical true to enable some debug printing when checking-*
 ;; function is called.
 
 ;; :validate - logical true to enable checking of a return value
@@ -889,17 +889,17 @@
 ;; (set-debug-opts! full-debug-opts)
 
 ;; to enable as thorough of extra verification checks as is supported
-;; by existing code, when you call any of the dbg-* variants of the
-;; functions in this namespace, e.g. dbg-catvec, dbg-subvec.
+;; by existing code, when you call any of the checking-* variants of the
+;; functions in this namespace, e.g. checking-catvec, checking-subvec.
 
-;; It will also slow down your code to do so.  dbg-* functions return
-;; the same values as their non dbg-* original functions they are
+;; It will also slow down your code to do so.  checking-* functions return
+;; the same values as their non checking-* original functions they are
 ;; based upon, so you can write application code that mixes calls to
-;; both, calling the dbg-* versions only occasionally, if you have a
+;; both, calling the checking-* versions only occasionally, if you have a
 ;; long sequence of operations that you want to look for bugs within
 ;; core.rrb-vector's implementation of.
 
-;; dbg-catvec always calls to dbg-splice-rrbts, and dbg-splice-rrbts
+;; checking-catvec always calls to checking-splice-rrbts, and checking-splice-rrbts
 ;; always concatenates a pair of vectors, so it is closer to the
 ;; source of any problems that catvec can encounter.  I think in just
 ;; about all cases it will be more effetive to enable :splice-rrbts in
@@ -916,11 +916,11 @@
 (defn set-debug-opts! [opts]
   (reset! debug-opts
           {;;:catvec opts      ;; redundant, really.  Recommend :splice-rrbts
-           :splice-rrbts opts  ;; checking this checks dbg-catvec results, too
-           :slicev opts        ;; checking this checks dbg-subvec results, too
-           :pop opts           ;; affects dbg-pop
-           :pop! opts          ;; affects dbg-pop!
-           :transient opts}))  ;; affects dbg-transient
+           :splice-rrbts opts  ;; checking this checks checking-catvec results, too
+           :slicev opts        ;; checking this checks checking-subvec results, too
+           :pop opts           ;; affects checking-pop
+           :pop! opts          ;; affects checking-pop!
+           :transient opts}))  ;; affects checking-transient
 
 (defn validating-pop [f err-desc-str coll]
   (let [coll-seq (copying-seq coll)
@@ -935,13 +935,13 @@
                             :exp-ret-seq exp-ret-seq}))
     ret))
 
-(defn dbg-pop [coll]
+(defn checking-pop [coll]
   (if-not (pd/is-vector? coll)
     (clojure.core/pop coll)
     (let [opts (get @debug-opts :pop)
           err-desc-str "pop"]
       (when (:trace opts)
-        (println "dbg-pop called with #v=" (count coll)
+        (println "checking-pop called with #v=" (count coll)
                  "(type v)=" (type coll)))
       (let [ret (if (:validate opts)
                   (validating-pop clojure.core/pop err-desc-str coll)
@@ -963,13 +963,13 @@
                             :exp-ret-seq exp-ret-seq}))
     ret))
 
-(defn dbg-pop! [coll]
+(defn checking-pop! [coll]
   (if-not (pd/is-vector? coll)
     (clojure.core/pop! coll)
     (let [opts (get @debug-opts :pop!)
           err-desc-str "pop!"]
       (when (:trace opts)
-        (println "dbg-pop! called with #v=" (count coll)
+        (println "checking-pop! called with #v=" (count coll)
                  "(type v)=" (type coll)))
       (let [ret (if (:validate opts)
                   (validating-pop! clojure.core/pop! err-desc-str coll)
@@ -991,13 +991,13 @@
                             :exp-ret-seq exp-ret-seq}))
     ret))
 
-(defn dbg-transient [coll]
+(defn checking-transient [coll]
   (if-not (pd/is-vector? coll)
     (clojure.core/transient coll)
     (let [opts (get @debug-opts :transient)
           err-desc-str "transient"]
       (when (:trace opts)
-        (println "dbg-transient called with #v=" (count coll)
+        (println "checking-transient called with #v=" (count coll)
                  "(type v)=" (type coll)))
       (let [ret (if (:validate opts)
                   (validating-transient clojure.core/transient err-desc-str
@@ -1036,13 +1036,13 @@
                             :exp-ret-seq exp-ret-seq}))
     ret))
 
-(defn dbg-splice-rrbts [& args]
+(defn checking-splice-rrbts [& args]
   (let [opts (get @debug-opts :splice-rrbts)
         err-desc-str "splice-rrbts"]
     (when (:trace opts)
       (let [#?(:clj [_ _ v1 v2]
                :cljs [v1 v2]) args]
-        (println "dbg-splice-rrbts called with #v1=" (count v1)
+        (println "checking-splice-rrbts called with #v1=" (count v1)
                  "#v2=" (count v2)
                  "(type v1)=" (type v1)
                  "(type v2)=" (type v2))))
@@ -1053,28 +1053,28 @@
         (apply check-fn err-desc-str ret args))
       ret)))
 
-(defn dbg-splicev [v1 v2]
+(defn checking-splicev [v1 v2]
   (let [rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v1)]
-    (dbg-splice-rrbts #?@(:clj ((.-nm rv1) (.-am rv1)))
-                      rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v2))))
+    (checking-splice-rrbts #?@(:clj ((.-nm rv1) (.-am rv1)))
+                           rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v2))))
 
-(defn dbg-catvec-impl
+(defn checking-catvec-impl
   ([]
      [])
   ([v1]
      v1)
   ([v1 v2]
-     (dbg-splicev v1 v2))
+     (checking-splicev v1 v2))
   ([v1 v2 v3]
-     (dbg-splicev (dbg-splicev v1 v2) v3))
+     (checking-splicev (checking-splicev v1 v2) v3))
   ([v1 v2 v3 v4]
-     (dbg-splicev (dbg-splicev v1 v2) (dbg-splicev v3 v4)))
+     (checking-splicev (checking-splicev v1 v2) (checking-splicev v3 v4)))
   ([v1 v2 v3 v4 & vn]
-     (dbg-splicev (dbg-splicev (dbg-splicev v1 v2) (dbg-splicev v3 v4))
-                  (apply dbg-catvec-impl vn))))
+     (checking-splicev (checking-splicev (checking-splicev v1 v2) (checking-splicev v3 v4))
+                       (apply checking-catvec-impl vn))))
 
 (defn validating-catvec [err-desc-str & vs]
-  (let [orig-fn dbg-catvec-impl  ;; clojure.core.rrb-vector/catvec
+  (let [orig-fn checking-catvec-impl  ;; clojure.core.rrb-vector/catvec
         vs-seqs (doall (map copying-seq vs))
         exp-ret-seq (apply concat vs-seqs)
         ret (apply orig-fn vs)
@@ -1086,18 +1086,18 @@
                             :exp-ret-seq exp-ret-seq}))
     ret))
 
-(defn dbg-catvec [& args]
+(defn checking-catvec [& args]
   (let [opts (get @debug-opts :catvec)
         err-desc-str "catvec"]
     (when (:trace opts)
-      (println "dbg-catvec called with" (count args) "args:")
+      (println "checking-catvec called with" (count args) "args:")
       (dorun (map-indexed (fn [idx v]
                             (println "    arg" (inc idx) " count=" (count v)
                                      "type=" (type v)))
                           args)))
     (let [ret (if (:validate opts)
                 (apply validating-catvec err-desc-str args)
-                (apply dbg-catvec-impl ;; clojure.core.rrb-vector/catvec
+                (apply checking-catvec-impl ;; clojure.core.rrb-vector/catvec
                        args))]
       (doseq [check-fn (:return-value-checks opts)]
         (apply check-fn err-desc-str ret args))
@@ -1121,12 +1121,12 @@
                              :exp-ret-seq exp-ret-seq}))
      ret)))
 
-(defn dbg-slicev [& args]
+(defn checking-slicev [& args]
   (let [opts (get @debug-opts :slicev)
         err-desc-str "slicev"]
     (when (:trace opts)
       (let [[v start end] args]
-        (println "dbg-slicev #v=" (count v) "start=" start "end=" end
+        (println "checking-slicev #v=" (count v) "start=" start "end=" end
                  "type=" (type v))))
     (let [ret (if (:validate opts)
                 (apply validating-slicev err-desc-str args)
@@ -1137,24 +1137,24 @@
         (apply check-fn err-desc-str ret args))
       ret)))
 
-(defn dbg-subvec
+(defn checking-subvec
   ([v start]
-   (dbg-slicev v start (count v)))
+   (checking-slicev v start (count v)))
   ([v start end]
-   (dbg-slicev v start end)))
+   (checking-slicev v start end)))
 
 (defn check-subvec [init & starts-and-ends]
   (let [v1 (loop [v   (vec (range init))
                   ses (seq starts-and-ends)]
              (if ses
                (let [[s e] ses]
-                 (recur (dbg-subvec v s e) (nnext ses)))
+                 (recur (checking-subvec v s e) (nnext ses)))
                v))
         v2 (loop [v   (fv/vec (range init))
                   ses (seq starts-and-ends)]
              (if ses
                (let [[s e] ses]
-                 (recur (dbg-subvec v s e) (nnext ses)))
+                 (recur (checking-subvec v s e) (nnext ses)))
                v))]
     (pd/same-coll? v1 v2)))
 
@@ -1162,7 +1162,7 @@
   (let [prefix-sums (reductions + counts)
         ranges (map range (cons 0 prefix-sums) prefix-sums)
         v1 (apply concat ranges)
-        v2 (apply dbg-catvec (map fv/vec ranges))]
+        v2 (apply checking-catvec (map fv/vec ranges))]
     (pd/same-coll? v1 v2)))
 
 (defn generative-check-subvec [iterations max-init-cnt slices]
