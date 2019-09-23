@@ -26,23 +26,23 @@
               :extra-deps {org.clojure/test.check {:mvn/version "0.7.0"}}}
 
   ;; Run only very short tests
-  :clj-rt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :clj-rt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.test-clj-only),(t/run-tests,'clojure.core.rrb-vector.test-clj-only)"]}
   :cljs-rt {:main-opts ["-m" "cljs.main"
                           "-re" "node"
-                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.test-cljs-only),(t/run-tests,'clojure.core.rrb-vector.test-cljs-only)"]}
 
   ;; Run 'short' tests
-  :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.test-clj-only,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-clj-only)"]}
   :cljs-runt {:main-opts ["-m" "cljs.main"
                           "-re" "node"
-                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.test-cljs-only,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-cljs-only)"]}
 
   ;; Run generative and/or 'long' tests
   :clj-runlongtests {:main-opts ["-e"
-                                 "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.long-test),(t/run-tests,'clojure.core.rrb-vector.long-test)"]}
+                                 "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.long-test),(t/run-tests,'clojure.core.rrb-vector.long-test)"]}
   :cljs-runlongtests {:main-opts ["-m" "cljs.main"
                                   "-re" "node"
-                                  "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.long-test),(t/run-tests,'clojure.core.rrb-vector.long-test)"]}
+                                  "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector.long-test),(t/run-tests,'clojure.core.rrb-vector.long-test)"]}
 
   ;; Using collections-check requires this minimum version of
   ;; test.check, and at least Clojure 1.7.0
@@ -60,10 +60,10 @@
                               "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-check),(t/run-tests,'clojure.core.rrb-vector-check)"]}
 
   ;; Run performance tests
-  :clj-runperf {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-performance-test),(t/run-tests,'clojure.core.rrb-vector-performance-test)"]}
+  :clj-runperf {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-performance-test),(t/run-tests,'clojure.core.rrb-vector-performance-test)"]}
   :cljs-runperf {:main-opts ["-m" "cljs.main"
                           "-re" "node"
-                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-performance-test),(t/run-tests,'clojure.core.rrb-vector-performance-test)"]}
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-performance-test),(t/run-tests,'clojure.core.rrb-vector-performance-test)"]}
 
   ;; Run whatever the current 'focus' tests are
   :clj-runfocus {:main-opts ["-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector.test-common,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}

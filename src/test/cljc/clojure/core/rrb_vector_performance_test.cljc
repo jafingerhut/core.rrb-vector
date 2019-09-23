@@ -1,6 +1,6 @@
 (ns clojure.core.rrb-vector-performance-test
   (:require [clojure.test :refer [deftest testing is are]]
-            [clojure.core.rrb-test-infra
+            [clojure.core.rrb-vector.test-infra
              :refer [ex-message-copy ex-cause-copy peephole-opt-debug-fn
                      print-event-counts]]
             #?@(:clj ([clojure.java.io :as io]))

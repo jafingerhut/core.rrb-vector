@@ -1,6 +1,6 @@
 (ns clojure.core.rrb-vector.long-test
   (:require [clojure.test :as test :refer [deftest testing is are]]
-            [clojure.core.rrb-test-infra :as infra
+            [clojure.core.rrb-vector.test-infra :as infra
              :refer [ex-message-copy ex-cause-copy print-event-counts]]
             [clojure.core.rrb-vector.test-utils :as u]
             [clojure.core.rrb-vector :as fv]

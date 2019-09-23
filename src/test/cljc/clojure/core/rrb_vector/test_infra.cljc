@@ -1,4 +1,4 @@
-(ns clojure.core.rrb-test-infra
+(ns clojure.core.rrb-vector.test-infra
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.rrb-vector.rrbt :as rrbt]
             [clojure.core.rrb-vector.debug :as dv]))

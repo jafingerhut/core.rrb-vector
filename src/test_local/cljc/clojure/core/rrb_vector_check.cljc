@@ -3,7 +3,7 @@
             [clojure.core.rrb-vector :as fv]
             [clojure.test.check.generators :as gen]
             [collection-check.core :refer [assert-vector-like]]
-            [clojure.core.rrb-test-infra]))
+            [clojure.core.rrb-vector.test-infra]))
 
 (deftest collection-check
   (let [p 50000]
