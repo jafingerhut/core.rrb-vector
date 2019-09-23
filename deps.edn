@@ -32,10 +32,10 @@
                           "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
 
   ;; Run 'short' tests
-  :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+  :clj-runt {:main-opts ["-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector-test)"]}
   :cljs-runt {:main-opts ["-m" "cljs.main"
                           "-re" "node"
-                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-common-test),(t/run-tests,'clojure.core.rrb-vector-test)"]}
+                          "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector.test-common),(t/run-tests,'clojure.core.rrb-vector-test)"]}
 
   ;; Run generative and/or 'long' tests
   :clj-runlongtests {:main-opts ["-e"
@@ -66,10 +66,10 @@
                           "-e" "(require,'[clojure.test,:as,t],'clojure.core.rrb-vector-test,'clojure.core.rrb-vector-performance-test),(t/run-tests,'clojure.core.rrb-vector-performance-test)"]}
 
   ;; Run whatever the current 'focus' tests are
-  :clj-runfocus {:main-opts ["-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
+  :clj-runfocus {:main-opts ["-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector.test-common,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
   :cljs-runfocus {:main-opts ["-m" "cljs.main"
                               "-re" "node"
-                              "-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector-common-test,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
+                              "-e" "(require,'[clojure.test,:as,t],'[clojure.core.rrb-vector.test-common,:as,ct]),(ct/test-reduce-subvec-catvec2)"]}
 
   ;; I have tried using cljs-test-runner for running clojure.test
   ;; tests in a modified version of core.rrb-vector, but my guess is
