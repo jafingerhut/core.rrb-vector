@@ -14,17 +14,27 @@
 (def full-debug-opts {:trace false
                       :validate true
                       :return-value-checks
-                      [dv/edit-nodes-error-checks
-                       dv/basic-node-error-checks
-                       dv/ranges-error-checks]})
+                      [dv/edit-nodes-errors
+                       dv/basic-node-errors
+                       dv/ranges-errors]
+                      ;; false -> throw an exception when error detected
+                      :continue-on-error false
+                      ;; true -> do not throw an exception when warning found
+                      :continue-on-warning true})
 
-(defn set-debug-opts! [opts]
-  (reset! dv/debug-opts {;;:catvec opts
-                         :splice-rrbts opts
-                         :slicev opts
-                         :pop opts
-                         :pop! opts
-                         :transient opts}))
+(defn set-debug-opts!
+  [opts]
+  (reset! dv/debug-opts
+          {:catvec opts        ;; affects checking-catvec behavior,
+                               ;; via calling checking-splicev and
+                               ;; checking-splice-rrbts and enabling
+                               ;; their extra checks.
+           :subvec opts        ;; affects checking-subvec behavior,
+                               ;; via calling checking-slicev and
+                               ;; enabling its extra checks
+           :pop opts           ;; affects checking-pop
+           :pop! opts          ;; affects checking-pop!
+           :transient opts}))  ;; affects checking-transient
 
 (defn now-msec []
   #?(:clj (System/currentTimeMillis)
