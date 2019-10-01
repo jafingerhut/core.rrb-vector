@@ -1,7 +1,7 @@
 (ns clojure.core.rrb-vector.debug
-  (:require [clojure.core.rrb-vector.rrbt
-             :refer [#?(:clj as-rrbt :cljs -as-rrbt)]]
+  (:require [clojure.core.rrb-vector.parameters :as p]
             [clojure.core.rrb-vector :as fv]
+            [clojure.core.rrb-vector.rrbt :as rrbt]
             ;; This page:
             ;; https://clojure.org/guides/reader_conditionals refers
             ;; to code that can go into common cljc files as platform
@@ -233,7 +233,9 @@
 ;; intended for use in test code that constructs vectors used as
 ;; parameters to other functions operating on vectors.
 (defn cvec [coll]
-  (clojure.core/vec coll))
+  (if (= p/shift-increment 5)
+    (clojure.core/vec coll)
+    (fv/vec (seq coll))))
 
 (defn slow-into [to from]
   (reduce conj to from))
@@ -427,7 +429,7 @@
       {:error true, :kind :internal
        :description
        (str "Found internal regular node with # full + # partial=" num-non-nil
-            " children outside of range [1, 32]."
+            " children outside of range [1, " 32 "]."
             " root-node?=" root-node? " root-node-cnt=" root-node-cnt)
        :data children}
       :else
@@ -791,7 +793,10 @@
 ;;       -as-rrbt (cljs) / as-rrbt (clj)
 ;;         -slicev (cljs) / slicev (clj) if used on a subvector object
 ;;       defn splice-rrbts
-;;         Calls many internal implementation detail functions.
+;;         defn splice-rrbts-main
+;;           Calls many internal implementation detail functions.
+;;         peephole-optimize-root
+;;         fallback-to-slow-splice-if-needed
 
 ;; defn fv/subvec
 ;;   -slicev (cljs) / slicev (clj) protocol function
@@ -1138,21 +1143,21 @@
         (sanity-check-vector-internals err-desc-str ret [coll] opts)
         ret))))
 
-(defn validating-splice-rrbts
-  "validating-splice-rrbts behaves the same as validating-pop, with
+(defn validating-splice-rrbts-main
+  "validating-splice-rrbts-main behaves the same as validating-pop, with
   the differences described here.  See validating-pop for details.
   
-      good example f: clojure.core.rrb-vector.rrbt/splice-rrbts
-      opts map: (get @d/debug-opts :catvec)  ;; _not_ :splice-rrbts
+      good example f: clojure.core.rrb-vector.rrbt/splice-rrbts-main
+      opts map: (get @d/debug-opts :catvec)  ;; _not_ :splice-rrbts-main
 
-  Given that splice-rrbts is an internal implementation detail of the
-  core.rrb-vector library, it is expected that it is more likely you
-  would call validating-catvec instead of this function.
+  Given that splice-rrbts-main is an internal implementation detail of
+  the core.rrb-vector library, it is expected that it is more likely
+  you would call validating-catvec instead of this function.
 
   If no exception is thrown, the return value is (f v1 v2)."
   #?(:clj [err-desc-str nm am v1 v2]
      :cljs [err-desc-str v1 v2])
-  (let [orig-fn clojure.core.rrb-vector.rrbt/splice-rrbts
+  (let [orig-fn rrbt/splice-rrbts-main
         v1-seq (copying-seq v1)
         v2-seq (copying-seq v2)
         exp-ret-seq (concat v1-seq v2-seq)
@@ -1161,7 +1166,7 @@
         ret-seq (copying-seq ret)]
     (when (not= ret-seq exp-ret-seq)
       (validation-failure
-       "splice-rrbts returned incorrect value"
+       "splice-rrbts-main returned incorrect value"
        {:err-desc-str err-desc-str, :ret ret,
         :args #?(:clj (list nm am v1 v2)
                  :cljs (list v1 v2)),
@@ -1169,6 +1174,35 @@
         :exp-ret-seq exp-ret-seq}
        (get @debug-opts :catvec)))
     ret))
+
+(defn checking-splice-rrbts-main
+  "checking-splice-rrbts-main is similar to checking-pop, with the
+  differences summarized below.  See checking-pop documentation for
+  details.
+
+  Unlike checking-pop, it seems unlikely that a user of
+  core.rrb-vector would want to call this function directly.  See
+  checking-catvec.  checking-splice-rrbts-main is part of the
+  implementation of checking-catvec.
+
+      opts map: (get @d/debug-opts :catvec)  ;; _not_ :splice-rrbts-main
+      function called if (:validating opts) is logical true:
+          validating-splice-rrbts-main"
+  [& args]
+  (let [opts (get @debug-opts :catvec)
+        err-desc-str "splice-rrbts-main"]
+    (when (:trace opts)
+      (let [#?(:clj [_ _ v1 v2]
+               :cljs [v1 v2]) args]
+        (println "checking-splice-rrbts-main called with #v1=" (count v1)
+                 "#v2=" (count v2)
+                 "(type v1)=" (type v1)
+                 "(type v2)=" (type v2))))
+    (let [ret (if (:validate opts)
+                (apply validating-splice-rrbts-main err-desc-str args)
+                (apply rrbt/splice-rrbts-main args))]
+      (sanity-check-vector-internals err-desc-str ret args opts)
+      ret)))
 
 (defn checking-splice-rrbts
   "checking-splice-rrbts is similar to checking-pop, with the
@@ -1185,19 +1219,26 @@
           validating-splice-rrbts"
   [& args]
   (let [opts (get @debug-opts :catvec)
-        err-desc-str "splice-rrbts"]
+        err-desc-str1 "splice-rrbts checking peephole-optimize-root result"
+        err-desc-str2 "splice-rrbts checking fallback-to-slow-splice-if-needed result"
+        #?(:clj [_ _ v1 v2]
+           :cljs [v1 v2]) args]
     (when (:trace opts)
-      (let [#?(:clj [_ _ v1 v2]
-               :cljs [v1 v2]) args]
-        (println "checking-splice-rrbts called with #v1=" (count v1)
-                 "#v2=" (count v2)
-                 "(type v1)=" (type v1)
-                 "(type v2)=" (type v2))))
-    (let [ret (if (:validate opts)
-                (apply validating-splice-rrbts err-desc-str args)
-                (apply clojure.core.rrb-vector.rrbt/splice-rrbts args))]
-      (sanity-check-vector-internals err-desc-str ret args opts)
-      ret)))
+      (println "checking-splice-rrbts called with #v1=" (count v1)
+               "#v2=" (count v2)
+               "(type v1)=" (type v1)
+               "(type v2)=" (type v2)))
+    (let [r1 (apply checking-splice-rrbts-main args)
+          r2 (rrbt/peephole-optimize-root r1)]
+      ;; Optimize a bit by only doing all of the sanity checks on r2
+      ;; if it is not the same identical data structure r1 that
+      ;; checking-splice-rrbts-main already checked.
+      (when-not (identical? r2 r1)
+        (sanity-check-vector-internals err-desc-str1 r2 args opts))
+      (let [r3 (rrbt/fallback-to-slow-splice-if-needed v1 v2 r2)]
+        (when-not (identical? r3 r2)
+          (sanity-check-vector-internals err-desc-str2 r3 args opts))
+        r3))))
 
 (defn checking-splicev
   "checking-splicev is identical to splicev, except that it calls
@@ -1208,9 +1249,9 @@
   call checking-catvec rather than this one.  checking-splicev is part
   of the implementation of checking-catvec."
   [v1 v2]
-  (let [rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v1)]
+  (let [rv1 (#?(:clj rrbt/as-rrbt :cljs rrbt/-as-rrbt) v1)]
     (checking-splice-rrbts #?@(:clj ((.-nm rv1) (.-am rv1)))
-                           rv1 (#?(:clj as-rrbt :cljs -as-rrbt) v2))))
+                           rv1 (#?(:clj rrbt/as-rrbt :cljs rrbt/-as-rrbt) v2))))
 
 (defn checking-catvec-impl
   "checking-catvec-impl is identical to catvec, except that it calls
