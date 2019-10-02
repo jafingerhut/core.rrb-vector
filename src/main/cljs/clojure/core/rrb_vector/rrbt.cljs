@@ -629,7 +629,11 @@
               (recur (inc i) (+ sbc (slot-count child cs))))))))))
 
 (defn leaf-seq [arr]
-  (mapcat #(.-arr %) (take (index-of-nil arr) arr)))
+  (into [] (comp (take-while (complement nil?))
+                 (take 32)
+                 (map #(.-arr %))
+                 cat)
+        arr))
 
 (defn rebalance-leaves
   [n1 cnt1 n2 cnt2 transferred-leaves]
@@ -649,9 +653,10 @@
             new-arr (make-array (if reg? 32 33))
             new-n1  (->VectorNode nil new-arr)]
         (loop [i  0
-               bs (partition-all 32
-                                 (concat (leaf-seq (.-arr n1))
-                                         (leaf-seq (.-arr n2))))]
+               bs (into [] (comp (map #(leaf-seq (.-arr %)))
+                                 cat
+                                 (partition-all 32))
+                        [n1 n2])]
           (when-first [block bs]
             (let [a (make-array (count block))]
               (loop [i 0 xs (seq block)]
@@ -672,9 +677,10 @@
             new-n1   (->VectorNode nil new-arr1)
             new-n2   (->VectorNode nil new-arr2)]
         (loop [i  0
-               bs (partition-all 32
-                                 (concat (leaf-seq (.-arr n1))
-                                         (leaf-seq (.-arr n2))))]
+               bs (into [] (comp (map #(leaf-seq (.-arr %)))
+                                 cat
+                                 (partition-all 32))
+                        [n1 n2])]
           (when-first [block bs]
             (let [a (make-array (count block))]
               (loop [i 0 xs (seq block)]
@@ -695,17 +701,26 @@
         rngs (if (regular? node)
                (regular-ranges shift cnt)
                (node-ranges node))
-        cs   (if rngs (aget rngs 32) (index-of-nil arr))
-        cseq (fn cseq [c r]
+        cs   (if rngs (aget rngs 32) 32)
+        cseq (fn cseq [[c r]]
                (let [arr  (.-arr c)
                      rngs (if (regular? c)
                             (regular-ranges (- shift 5) r)
                             (node-ranges c))
-                     gcs  (if rngs (aget rngs 32) (index-of-nil arr))]
-                 (map list
-                      (take gcs arr)
-                      (take gcs (map - rngs (cons 0 rngs))))))]
-    (mapcat cseq (take cs arr) (take cs (map - rngs (cons 0 rngs))))))
+                     gcs  (if rngs (aget rngs 32) 32)
+                     rng-deltas (mapv - rngs (cons 0 rngs))]
+                 (into [] (comp (take-while (complement nil?))
+                                (take gcs)
+                                (map-indexed (fn [idx node]
+                                               [node (rng-deltas idx)])))
+                       arr)))
+        rng-deltas (mapv - rngs (cons 0 rngs))]
+    (into [] (comp (take-while (complement nil?))
+                   (take cs)
+                   (map-indexed (fn [idx node] [node (rng-deltas idx)]))
+                   (map cseq)
+                   cat)
+          arr)))
 
 (defn rebalance
   [shift n1 cnt1 n2 cnt2 transferred-leaves]
@@ -727,9 +742,11 @@
               new-rngs (make-array 33)
               new-n1   (->VectorNode nil new-arr)]
           (loop [i  0
-                 bs (partition-all 32
-                                   (concat (child-seq n1 shift cnt1)
-                                           (child-seq n2 shift cnt2)))]
+                 bs (into [] (comp (map (fn [[node cnt]]
+                                          (child-seq node shift cnt)))
+                                   cat
+                                   (partition-all 32))
+                          [[n1 cnt1] [n2 cnt2]])]
             (when-first [block bs]
               (let [a (make-array 33)
                     r (make-array 33)]
@@ -758,9 +775,11 @@
               new-n1    (->VectorNode nil new-arr1)
               new-n2    (->VectorNode nil new-arr2)]
           (loop [i  0
-                 bs (partition-all 32
-                                   (concat (child-seq n1 shift cnt1)
-                                           (child-seq n2 shift cnt2)))]
+                 bs (into [] (comp (map (fn [[node cnt]]
+                                          (child-seq node shift cnt)))
+                                   cat
+                                   (partition-all 32))
+                          [[n1 cnt1] [n2 cnt2]])]
             (when-first [block bs]
               (let [a (make-array 33)
                     r (make-array 33)]
@@ -862,34 +881,19 @@
 (def peephole-optimization-config (atom {:debug-fn nil}))
 (def peephole-optimization-count (atom 0))
 
-;; TBD: Transducer versions of child-nodes and bounded-grandchildren
-;; are included here for when we are willing to rely upon Clojure
-;; 1.7.0 as the minimum version supported by the core.rrb-vector
-;; library.  They are faster.
-
-#_(defn child-nodes [node]
+(defn child-nodes [node]
   (into [] (comp (take-while (complement nil?))
                  (take 32))
         (.-arr node)))
 
-(defn child-nodes [node]
-  (->> (.-arr node)
-       (take-while (complement nil?))
-       (take 32)))
-
 ;; (take 33) is just a technique to avoid generating more
 ;; grandchildren than necessary.  If there are at least 33, we do not
 ;; care how many there are.
-#_(defn bounded-grandchildren [children]
+(defn bounded-grandchildren [children]
   (into [] (comp (map child-nodes)
                  cat
                  (take 33))
         children))
-
-(defn bounded-grandchildren [children]
-  (->> children
-       (mapcat child-nodes)
-       (take 33)))
 
 ;; TBD: Do functions like last-non-nil-idx and
 ;; count-vector-elements-beneath already exist elsewhere in this
